@@ -94,6 +94,55 @@ jobs:
           print('OK: collisions disambiguated')
           "
 
+      - name: Frontmatter parser handles all three YAML list forms
+        run: |
+          mkdir -p /tmp/yaml-vault/notes
+          # Form A: inline list on one line
+          cat > /tmp/yaml-vault/notes/inline-form.md <<'EOF'
+          ---
+          title: Inline Form
+          aliases: [first-inline, second-inline, third-inline]
+          ---
+          body
+          EOF
+          # Form B: list starts on key line with `- val`
+          cat > /tmp/yaml-vault/notes/sameline-form.md <<'EOF'
+          ---
+          title: Sameline Form
+          aliases: - first-sameline
+            - second-sameline
+            - third-sameline
+          ---
+          body
+          EOF
+          # Form C: bare key on one line, list on subsequent indented lines
+          # This is the standard YAML multi-line form that was silently dropped
+          # before this fix.
+          cat > /tmp/yaml-vault/notes/standard-form.md <<'EOF'
+          ---
+          title: Standard Form
+          aliases:
+            - first-standard
+            - second-standard
+            - third-standard
+          ---
+          body
+          EOF
+          python3 rebuild-vault-index.py \
+            --vault /tmp/yaml-vault \
+            --output /tmp/yaml-index.json \
+            --scan notes:cc
+          python3 -c "
+          import json
+          d = json.load(open('/tmp/yaml-index.json'))
+          for eid, expect in [('inline-form', 'first-inline'),
+                              ('sameline-form', 'first-sameline'),
+                              ('standard-form', 'first-standard')]:
+              aliases = d['entries'][eid]['aliases']
+              assert expect in aliases, f'{eid} missing {expect}, got {aliases}'
+          print('OK: all three YAML list forms parsed')
+          "
+
       - name: rag_exclude frontmatter is honored
         run: |
           mkdir -p /tmp/exclude-vault/notes
@@ -260,6 +309,30 @@ jobs:
         run: |
           OUT=$(python3 orp_link_check.py --vault /tmp/link-vault --ignore-orphans --json)
           echo "$OUT" | python3 -c "import json, sys; d=json.load(sys.stdin); assert 'dead' in d and 'live' in d; print('OK json shape')"
+
+      - name: Link check — bare wikilinks resolve via vault-wide name lookup
+        run: |
+          # Obsidian's [[meowtype]] looks up meowtype.md anywhere in the vault.
+          # This was previously misclassified as a dead link because resolve()
+          # treated the wikilink as a vault-relative path.
+          mkdir -p /tmp/bare-vault/wiki/projects /tmp/bare-vault/notes
+          printf 'see [[meowtype]] for status\n' > /tmp/bare-vault/notes/source.md
+          printf 'project content\n' > /tmp/bare-vault/wiki/projects/meowtype.md
+          OUT=$(python3 orp_link_check.py --vault /tmp/bare-vault --ignore-orphans 2>&1)
+          echo "$OUT"
+          echo "$OUT" | grep -q "Live links: 1" || (echo "FAIL: bare wikilink not resolved via name index" && exit 1)
+          echo "$OUT" | grep -q "Dead links: 0" || (echo "FAIL: bare wikilink reported as dead" && exit 1)
+
+      - name: Link check — bare wikilink with no match is still dead
+        run: |
+          mkdir -p /tmp/bare-dead-vault/notes
+          printf 'see [[totally-missing]] please\n' > /tmp/bare-dead-vault/notes/source.md
+          set +e
+          OUT=$(python3 orp_link_check.py --vault /tmp/bare-dead-vault --ignore-orphans 2>&1)
+          RC=$?
+          set -e
+          test "$RC" = "1" || (echo "FAIL: expected exit 1 on dead bare wikilink, got $RC" && exit 1)
+          echo "$OUT" | grep -q "Dead links: 1" || (echo "FAIL: dead bare wikilink not reported" && exit 1)
 
       - name: Check file encoding
         run: |

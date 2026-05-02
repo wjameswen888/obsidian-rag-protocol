@@ -359,6 +359,11 @@ Recommended invocation points:
 
 Scans a directory of markdown files for `[[wikilink]]` and inline-code path references, resolves each against a vault root, reports dead links / live links / orphans. This is the conformance check for §6 (Skill ↔ Vault auto-expansion): if a skill file references a vault note that no longer exists, agents auto-loading the wikilink will fail silently. Recognizes Obsidian template variables (`{date}`, `{timestamp}`) and directory references — does not flag them as dead.
 
+Resolution is two-pass to match Obsidian's own behavior:
+
+1. **Path-style** — `[[wiki/projects/note]]` resolves to `vault/wiki/projects/note.md`.
+2. **Bare-name fallback** — `[[note]]` (no path component) is looked up against an in-vault filename index, mirroring how Obsidian itself resolves bare wikilinks. Without this fallback, every bare wikilink in a vault with a non-flat directory structure would be reported as dead, drowning real issues in noise.
+
 Recommended invocation points:
 
 - After moving or renaming a vault note — catch which skill files now point at thin air.
