@@ -1,5 +1,7 @@
 # Obsidian RAG Protocol (ORP)
 
+🌐 [English](README.md) | [中文](README.zh.md) | [日本語](README.ja.md)
+
 > **一言で:** AIエージェントに「長期記憶」を与える、Obsidianボルト向けのオープンプロトコル
 
 ---

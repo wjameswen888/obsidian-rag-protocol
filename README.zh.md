@@ -1,5 +1,7 @@
 # Obsidian RAG Protocol (ORP)
 
+🌐 [English](README.md) | [中文](README.zh.md) | [日本語](README.ja.md)
+
 > 用 Obsidian 知识库给 AI Agent 装上长期记忆——零额外 Token、增量索引、双向协作。
 
 ---

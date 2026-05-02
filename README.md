@@ -1,5 +1,7 @@
 # Obsidian RAG Protocol (ORP)
 
+🌐 [English](README.md) | [中文](README.zh.md) | [日本語](README.ja.md)
+
 **An open protocol for giving AI agents long-term memory from your Obsidian vault.**
 
 > "The community was talking about 'personal knowledge base as agent identity.' I was already on v3.4."
