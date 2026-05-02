@@ -236,6 +236,15 @@ Open source under MIT License.
 
 ---
 
+### Built on
+
+<a href="https://github.com/nousresearch/hermes-agent"><img src="https://img.shields.io/badge/Hermes_Agent-Compatible-blue" alt="Hermes Agent Compatible"></a>
+<a href="https://obsidian.md"><img src="https://img.shields.io/badge/Obsidian-Powered-7C3AED" alt="Obsidian Powered"></a>
+
+ORP was built for the [Hermes Agent](https://github.com/nousresearch/hermes-agent) ecosystem and [Obsidian](https://obsidian.md) vaults. It works with any agent that can read files.
+
+**For Hermes users**: install with one command [→ Installation Guide](INSTALL.md#agent-integration)
+
 ### Follow the Creator
 
 - **Twitter/X**: [@vinentW789](https://x.com/vinentW789)

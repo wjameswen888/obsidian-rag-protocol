@@ -290,7 +290,7 @@ MIT License — 自由使用、修改和分发。
 
 **Vincent Wen** — Crypto/Web3 营销人，正在寻找 Crypto + AI 方向的职位。
 
-- **Twitter/X**：[@VincentWen](https://x.com/)
+- **Twitter/X**：[@vinentW789](https://x.com/vinentW789)
 - **GitHub**：[wjameswen888](https://github.com/wjameswen888)
 
 如果你也在探索 AI Agent + 个人知识库的结合，欢迎来聊！

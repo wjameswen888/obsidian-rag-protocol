@@ -286,7 +286,7 @@ MIT License — 自由に使用、改変、配布できます。
 
 **Vincent Wen** — Crypto/Web3マーケティング・プロフェッショナル。エンジニアではないが、課題をプロトコルとして定式化し、自分の日常を支えるツールを作りました。
 
-- **Twitter/X:** [@VincentWen](https://x.com/)
+- **Twitter/X:** [@vinentW789](https://x.com/vinentW789)
 - **GitHub:** [wjameswen888](https://github.com/wjameswen888)
 
 > *「エージェントが記憶を持てば、人間の知識はセッションを超えて生き続ける。」*
