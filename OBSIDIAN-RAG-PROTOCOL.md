@@ -1,14 +1,19 @@
 # OBSIDIAN-RAG-PROTOCOL.md
 
-## Version 1.1
+## Version 1.2
 
-Changes from 1.0:
-- Index document gains a top-level `version` field (required).
-- `updated` field is an ISO-8601 timestamp with timezone offset (was date-only).
-- Cross-scan-dir entry_id collisions are deterministically disambiguated with the scan-root basename — see §1.3.
-- Indexer writes are atomic (tmp + rename); a crashed rebuild never leaves a half-written index.
-- A corrupted index is renamed to `<name>.broken-<ts>` instead of being silently overwritten — preserves hand-curated aliases for recovery.
-- §5.2 specifies atomic-append semantics for the collaboration log.
+Changes from 1.1:
+- §1.4 size guidance loosened — the "<20KB" target was a 2024-era cost-of-context anchor and broke once production indexes grew past 30 entries. Replaced with a soft cap that scales with vault size and a recommendation to split cold archives.
+- §4.1 trigger classification reframed as a behavioral test (does the user want to recall vs. execute?), removing the English-only keyword list. The previous list assumed monolingual prompts; production use is multilingual.
+- §5.2 collaboration-channel rules tightened: writers MUST use append-only operations and MUST NOT replace the file with `write_file`. The previous `flock`-or-PIPE_BUF spec was permissive enough to allow naive read-modify-write to pass review.
+- §11 (new) Reference utilities — the repository now ships indexer, reader, health checker, and link checker as the conformance target.
+
+Changes from 1.0 (carried over):
+- Top-level `version` field (required).
+- `updated` field is ISO-8601 with timezone offset.
+- Cross-scan-dir entry_id collisions disambiguated with scan-root basename (§1.3).
+- Indexer writes are atomic (tmp + rename).
+- Corrupted indexes preserved at `<name>.broken-<ts>` (§4.3).
 
 ---
 
@@ -58,9 +63,15 @@ When the same naive entry_id would be produced by two files in different scan ro
 
 The indexer MUST emit a `NOTE:` to stderr the first time a collision is observed in a run. If even the disambiguated form collides (two files with the same name in same-named subdirectories of two different scan roots), the indexer MUST emit a `WARNING:` to stderr and keep the last write.
 
-### 1.4 Size Target
+### 1.4 Size Guidance
 
-Index should remain under 20KB. If growing beyond, consider adding directory-specific cutoff days, archiving stale entries to a separate cold index, or raising the age threshold.
+The index is read in full on every non-trivial query, so its size directly maps to per-query token cost. A reasonable soft cap is **~50 KB** (about 100 entries with conservative summary lengths). Past that, consider:
+
+- **Tightening `cutoff-days`** so the rolling window stays bounded.
+- **Splitting into hot + cold indexes** — keep recent / active notes in `vault-index.json`, archive older ones to `vault-index-archive.json` that the agent reads only on explicit request.
+- **Trimming `summary.key_points`** to one line per entry instead of three.
+
+There's no hard ceiling. Modern context windows tolerate larger indexes; the cost question is "tokens per query" not "bytes on disk." Pick a soft cap that fits your retrieval budget and use `orp_health.py --max-size-kb` to enforce it.
 
 ---
 
@@ -164,13 +175,21 @@ No algorithmic alias generation. This prevents drift.
 
 ### 4.1 Trigger Classification
 
-**Non-trivial queries** (→ MUST read index as first tool call):
-- Contains: why, how, analyze, research, review, before, "what is", "what are", "help me understand"
+The classifier is a **behavioral test, not a keyword list**. Ask: *does the user want me to recall something, or to execute something?*
 
-**Trivial queries** (→ skip RAG, execute directly):
-- "run X", "check price", "change config", "send message", "execute script"
+**Recall intent → MUST read the index as the first tool call:**
+- Questions that lean on past context — what we decided, what we discussed, what we know about X.
+- Questions that don't make sense without prior knowledge — "is the migration done?", "what's the latest on...?", "how did we end up handling...?"
+- Open-ended retrieval — "tell me about Y", "summarize Z", "what do we have on...?"
 
-**Uncertain** → bias toward triggering. Cost of a false positive = one 15KB file read.
+**Execute intent → skip the index, act directly:**
+- Direct actions on external systems — run X, query Y's price, send a message, restart a service.
+- Self-contained transformations — format this JSON, edit this file, generate a regex.
+- Novel reasoning that doesn't depend on personal context — "how does TLS handshake work in general."
+
+**When uncertain → bias toward triggering.** The index is small; reading it on a false positive is cheap. The miss case (failing to recall something the user already wrote down) is much more expensive — it forces the user to repeat themselves.
+
+This test is intentionally language-agnostic. An LLM agent can apply it directly without a regex stage; production use is typically multilingual and ad-hoc keyword lists fall behind real prompts.
 
 ### 4.2 Matching Algorithm
 
@@ -205,13 +224,16 @@ vault/
 
 ### 5.2 Collaboration Channel
 
-A designated file (`wiki/log.md`) acts as the inter-agent communication log. Both agents append entries with format `🦅[Agent] <message>`. This file is NEVER overwritten — append-only.
+A designated file (`wiki/log.md`) acts as the inter-agent communication log. Both agents append entries with format `🦅[Agent] <message>`. This file is NEVER overwritten.
 
-Writers MUST use atomic append semantics, since two agents may write concurrently:
-- Open with `O_APPEND` and issue a single `write(2)` ≤ `PIPE_BUF` (4096 bytes on Linux/macOS), OR
-- Hold an `flock(LOCK_EX)` for the duration of the write.
+**Hard rules for writers:**
 
-Entries longer than `PIPE_BUF` MUST use the lock approach. Naive `read → modify → write` is forbidden — it loses concurrent writes.
+- **Append-only.** Never replace the file with `write_file` (or equivalent full-file replacement). New entries are added by appending or prepending, never by re-emitting the entire file.
+- **Pre-flight check.** Before any modification, read the current file and record its byte size. After the modification, the byte size MUST be ≥ the pre-flight size plus the entry length. A shrink means something was lost — abort and surface to the user.
+- **Concurrency floor.** Either issue a single `write(2)` ≤ `PIPE_BUF` (≈4096 bytes on Linux/macOS) on a file opened with `O_APPEND`, or hold an `flock(LOCK_EX)` for the duration of the write. Naive read-modify-write at file scope is forbidden — it silently loses concurrent writes from the other agent.
+- **Failure mode.** If a write would violate the byte-size invariant, the writer MUST stop and ask the user before proceeding. Recovering from a corrupted log is cheap; recovering from a destroyed log is not.
+
+These rules are stricter than naive "atomic append" because the log is the single source of truth for inter-agent state — losing one write can leave the two agents permanently out of sync about what happened.
 
 ### 5.3 Cross-Write Protocol
 
@@ -287,12 +309,19 @@ All ORP-related agent skills must be pinned via the agent's curator system to pr
 
 ## 9. Reference Implementation
 
-The repository ships two reference implementations, both single-file, both stdlib-only:
+The repository ships a single-file, stdlib-only reference implementation. Two scripts cover the protocol's normative behavior; two more cover operations against an existing index.
 
-- **`rebuild-vault-index.py`** — the indexer side. Implements §1 (vault index), §2 (indexing algorithm), §3 (alias resolution), §7 (incremental rebuild). Run as a cron job.
-- **`orp_reader.py`** — the reader side. Implements §4.2 (matching algorithm), §4.3 (error handling), staleness detection (Rule 4), §3.2 (scalar aliases tolerance). Usable as a Python library (`from orp_reader import VaultIndex`) or as a CLI (`python3 orp_reader.py match "..."`). Drop it into any agent that doesn't yet have its own reader.
+**Protocol-defining (you reimplement these in any compliant indexer/reader):**
 
-Together they cover both ends of the protocol. Implementations in other languages are welcome — use these as the conformance target.
+- **`rebuild-vault-index.py`** — the indexer side. Implements §1 (vault index), §2 (indexing algorithm), §3 (alias resolution), §7 (incremental rebuild).
+- **`orp_reader.py`** — the reader side. Implements §4.2 (matching algorithm), §4.3 (error handling), staleness detection (Rule 4), §3.2 (scalar aliases tolerance). Library (`from orp_reader import VaultIndex`) or CLI.
+
+**Operational (not part of the protocol contract — see §11):**
+
+- **`orp_health.py`** — schema and freshness validator.
+- **`orp_link_check.py`** — wikilink integrity scanner for §6.
+
+Implementations in other languages are welcome — the four Python scripts are the conformance target for the protocol-defining pair.
 
 ---
 
@@ -304,18 +333,65 @@ To adopt ORP for your agent:
 - [ ] Define exclusion patterns for your vault structure
 - [ ] Set up auto context injection rules in your agent's system prompt
 - [ ] Run initial index build
-- [ ] Schedule daily rebuild (cron or equivalent)
+- [ ] Set up rebuild trigger (see §11 — cron, agent-internal scheduler, coupled into another job, or staleness-prompt)
 - [ ] Pin ORP-related skills from curator/auto-cleanup
-- [ ] Verify: agent reads vault-index.json on non-trivial queries
+- [ ] Verify: agent reads vault-index.json on recall-intent queries
 - [ ] Verify: incremental rebuild shows 0 changes when vault is unchanged
+- [ ] Verify: `orp_health.py` exits 0 against the freshly-built index
+
+---
+
+## 11. Reference Utilities
+
+These ship with the reference implementation. They are **not part of the protocol contract** — a compliant indexer + reader satisfies the spec — but they cover operational concerns every adopter eventually hits.
+
+### 11.1 Health checking — `orp_health.py`
+
+Validates an index against the v1.1+ schema, verifies it isn't stale, surfaces orphan paths and short aliases that the reader's noise filter would drop. Distinguishes hard failures (missing required fields, stale beyond threshold, unparseable JSON) from soft warnings (orphans, oversized index). `--strict` promotes warnings to non-zero exit for use as a CI gate.
+
+Recommended invocation points:
+
+- After every rebuild — verify the new index is well-formed before agents start reading it.
+- Before adopting a new agent skill — confirm the existing index is fresh enough to be useful.
+- In CI — fail the pipeline if a PR breaks the index shape or makes it stale.
+
+### 11.2 Link integrity — `orp_link_check.py`
+
+Scans a directory of markdown files for `[[wikilink]]` and inline-code path references, resolves each against a vault root, reports dead links / live links / orphans. This is the conformance check for §6 (Skill ↔ Vault auto-expansion): if a skill file references a vault note that no longer exists, agents auto-loading the wikilink will fail silently. Recognizes Obsidian template variables (`{date}`, `{timestamp}`) and directory references — does not flag them as dead.
+
+Recommended invocation points:
+
+- After moving or renaming a vault note — catch which skill files now point at thin air.
+- After editing an agent skill — confirm any new wikilinks resolve.
+- In CI on the skills repo — block PRs that introduce dead references.
+
+### 11.3 Triggering rebuilds
+
+The protocol doesn't mandate a specific trigger mechanism. Four are routinely useful, and a working setup typically uses two or three of them:
+
+- **Scheduled (cron / launchd / systemd timer)** — daily or hourly off-peak rebuild. Set-and-forget; the staleness window is bounded by the schedule interval.
+- **Agent-internal scheduler** — if your agent has a native scheduled-task system, register the rebuild script there. Survives across agent restarts; doesn't require separate cron infrastructure.
+- **Coupled to an upstream job** — wrap the rebuild into another scheduled task that already produces vault content (e.g., a daily job that scrapes job-board listings and writes them into the vault should rebuild the index before completing).
+- **Staleness-prompt** — agent reads `updated`, sees ≥4 days, asks the user to rebuild. Effective fallback when the scheduled trigger fails silently.
+
+A robust setup uses a scheduled trigger as the primary path and the staleness-prompt as the safety net.
+
+### 11.4 Co-located ancillary indexes
+
+Adopters frequently maintain a second index alongside `vault-index.json` for cross-cutting concerns the protocol intentionally doesn't cover:
+
+- **`vault-connectivity.json`** — output of `orp_link_check.py --json`, lists which skills reference which vault files. Lets agents reason about "which skill loads will pull this note as expansion."
+
+These ancillary indexes are out of protocol scope but interoperate cleanly because they sit beside `vault-index.json` and answer adjacent questions.
 
 ---
 
 ## Appendix: Design Philosophy
 
-1. **Index is machine-readable, not LLM-reasoned** — JSON lookup, zero prompt token overhead
+1. **Index is machine-readable, not LLM-reasoned** — JSON lookup, no prompt-time inference cost on the index itself
 2. **Frontmatter drives content** — the human controls summaries and aliases
 3. **Path-based exclusion** — deterministic, not dependent on frontmatter discipline
 4. **Hash-based incremental** — immune to filesystem time quirks
 5. **Aliases are curated, not generated** — quality over quantity in search matching
 6. **Two agents, one vault** — separate write directories, shared read
+7. **Bidirectional, not read-only** — agents both read the vault and write back to it on triggers; the index is the protocol surface, not the entire interaction
