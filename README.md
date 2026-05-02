@@ -32,23 +32,75 @@ The community just started exploring "personal knowledge base as agent identity"
 
 ## Protocol Overview
 
+### Architecture & Data Flow
+
 ```
-                    ┌──────────────────┐
-                    │   Obsidian Vault │
-                    │  (your notes)    │
-                    └────────┬─────────┘
-                             │
-                    ┌────────▼─────────┐
-                    │  vault-index.json│  ← Machine-readable index
-                    │  (SHA256 hashed) │     ~15KB, 30+ entries
-                    └────────┬─────────┘
-                             │
-              ┌──────────────┼──────────────┐
-              │              │              │
-     ┌────────▼──────┐ ┌────▼─────┐ ┌──────▼──────┐
-     │  Hermes Agent │ │Claude Code│ │  Any Agent  │
-     │  (read-only)  │ │(read-only)│ │ (adopt ORP) │
-     └───────────────┘ └───────────┘ └─────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                      OBSIDIAN VAULT                         │
+│                                                             │
+│  wiki/                  hermes-knowledge/                    │
+│  ├── projects/          ├── job-search/                     │
+│  ├── career/            ├── engineering/                    │
+│  └── log.md  ◄────────►└── cron-knowledge/                │
+│        ↑ collaboration channel         ↑                    │
+└────────┼───────────────────────────────┼────────────────────┘
+         │  .md files                    │
+         ▼                               │
+ ┌───────────────────┐                   │
+ │  rebuild-vault-   │   SHA256 hash &   │
+ │  index.py         │   frontmatter     │
+ │  (cron: daily)    │   extraction      │
+ └────────┬──────────┘                   │
+          │ outputs                      │
+          ▼                               │
+ ┌────────────────────────────────────────┼──────────────────┐
+ │           vault-index.json  (~15KB)                      │
+ │                                                          │
+ │  { entries: {                                            │
+ │      "project-alpha": {                                  │
+ │        path, title, summary,                             │
+ │        aliases, _content_hash, ...                       │
+ │      }                                                   │
+ │  }}                                                      │
+ │                                                          │
+ │  ★ One tool call = full context awareness                │
+ │  ★ Zero prompt tokens for indexing                      │
+ └────────┬────────────────┬────────────────┬────────────────┘
+          │                │                │
+          ▼                ▼                ▼
+ ┌─────────────┐  ┌──────────────┐  ┌──────────────┐
+ │ Hermes      │  │ Claude Code  │  │ Any Agent    │
+ │ Agent       │  │              │  │ (adopt ORP)  │
+ │             │  │              │  │              │
+ │ writes to:  │  │ writes to:   │  │   ORP spec   │
+ │ hermes-     │  │ wiki/        │  │   = open     │
+ │ knowledge/  │  │              │  │   protocol   │
+ │             │  │              │  │              │
+ │ reads from: │  │ reads from:  │  │              │
+ │ wiki/       │  │ hermes-      │  │              │
+ │             │  │ knowledge/   │  │              │
+ └─────────────┘  └──────────────┘  └──────────────┘
+
+  ┌──────────────────────────────────────────────────────┐
+  │  AUTO CONTEXT INJECTION FLOW                         │
+  │                                                      │
+  │  User asks ──► Agent classifies query ──► non-trivial│
+  │       │                                    │         │
+  │       │                              trivial│         │
+  │       │                                    ▼         │
+  │       │                           read vault-index   │
+  │       │                           .json (1st call)  │
+  │       │                                    │         │
+  │       │                          fuzzy match aliases │
+  │       │                              │      │        │
+  │       │                           HIT ─┘   MISS ─┐   │
+  │       │                              │           │   │
+  │       │                    read matched   check staleness│
+  │       │                    vault file(s)  (>4d? rebuild)│
+  │       │                              │           │   │
+  │       │                              ▼           ▼   │
+  │       ◄──────── answered with context ──────────────  │
+  └──────────────────────────────────────────────────────┘
 ```
 
 ### Core Design Decisions
@@ -153,6 +205,27 @@ This protocol is currently running in production in my personal Hermes Agent set
 - **Daily cron rebuild** with incremental change detection
 - **Curator protection** preventing the agent from touching index-related skills
 
+## Real-World Impact
+
+**Before ORP** — every agent session is an amnesiac. **After ORP** — context is automatic, reliable, and zero-maintenance.
+
+### 1. Conversation Continuity
+
+- **Before**: You ask "what did we decide about the Coinbase partnership?" and the agent has no idea. You re-explain the entire history. Every. Single. Session.
+- **After**: The agent reads `vault-index.json`, fuzzy-matches "Coinbase" against aliases, and pulls up your `coinbase-evaluation.md` — with status, key decisions, and last action — before you finish typing the question.
+
+### 2. Multi-Agent Collaboration Without Chaos
+
+- **Before**: Hermes writes research notes. Claude Code writes project docs. They're in separate silos — no shared context, no cross-referencing, no single source of truth.
+- **After**: Two agents share one vault through directory partitioning. Hermes reads Claude Code's `wiki/` updates; Claude Code reads Hermes's `hermes-knowledge/` intel. The collaboration log (`log.md`) tracks everything. Both agents work from the same indexed context layer.
+
+### 3. Zero Token Overhead on Context Injection
+
+- **Before**: You paste your entire vault into the system prompt (thousands of tokens, every conversation) or manually search and attach files (tedious, error-prone, you forget things).
+- **After**: One `read_file(vault-index.json)` call — ~15KB, triggered automatically on non-trivial queries, zero prompt tokens consumed at rest. Only the matched vault file gets loaded, and only when relevant.
+
+---
+
 ## Status
 
 ORP v1.0 spec is stable — this is what runs my daily workflow. The reference implementation is a single-file Python script that you can drop into any agent environment.
@@ -163,7 +236,7 @@ Open source under MIT License.
 
 ### Follow the Creator
 
-- **Twitter/X**: [@VincentWen](https://x.com/)
+- **Twitter/X**: [@vinentW789](https://x.com/vinentW789)
 - **GitHub**: [wjameswen888](https://github.com/wjameswen888)
 
 *I'm a marketing professional who builds AI infrastructure because someone had to.*
