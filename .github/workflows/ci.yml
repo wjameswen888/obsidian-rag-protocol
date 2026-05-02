@@ -310,6 +310,30 @@ jobs:
           OUT=$(python3 orp_link_check.py --vault /tmp/link-vault --ignore-orphans --json)
           echo "$OUT" | python3 -c "import json, sys; d=json.load(sys.stdin); assert 'dead' in d and 'live' in d; print('OK json shape')"
 
+      - name: Link check — bare wikilinks resolve via vault-wide name lookup
+        run: |
+          # Obsidian's [[meowtype]] looks up meowtype.md anywhere in the vault.
+          # This was previously misclassified as a dead link because resolve()
+          # treated the wikilink as a vault-relative path.
+          mkdir -p /tmp/bare-vault/wiki/projects /tmp/bare-vault/notes
+          printf 'see [[meowtype]] for status\n' > /tmp/bare-vault/notes/source.md
+          printf 'project content\n' > /tmp/bare-vault/wiki/projects/meowtype.md
+          OUT=$(python3 orp_link_check.py --vault /tmp/bare-vault --ignore-orphans 2>&1)
+          echo "$OUT"
+          echo "$OUT" | grep -q "Live links: 1" || (echo "FAIL: bare wikilink not resolved via name index" && exit 1)
+          echo "$OUT" | grep -q "Dead links: 0" || (echo "FAIL: bare wikilink reported as dead" && exit 1)
+
+      - name: Link check — bare wikilink with no match is still dead
+        run: |
+          mkdir -p /tmp/bare-dead-vault/notes
+          printf 'see [[totally-missing]] please\n' > /tmp/bare-dead-vault/notes/source.md
+          set +e
+          OUT=$(python3 orp_link_check.py --vault /tmp/bare-dead-vault --ignore-orphans 2>&1)
+          RC=$?
+          set -e
+          test "$RC" = "1" || (echo "FAIL: expected exit 1 on dead bare wikilink, got $RC" && exit 1)
+          echo "$OUT" | grep -q "Dead links: 1" || (echo "FAIL: dead bare wikilink not reported" && exit 1)
+
       - name: Check file encoding
         run: |
           for f in rebuild-vault-index.py orp_reader.py orp_health.py orp_link_check.py; do

@@ -36,6 +36,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Optional
 
 
 # [[wikilink]] — Obsidian internal link, possibly with #anchor or |alias
@@ -63,13 +64,55 @@ def is_directory_ref(vault: Path, ref: str) -> bool:
     return candidate.is_dir()
 
 
-def resolve(vault: Path, ref: str) -> Path:
-    """Resolve a ref to a candidate file path, adding .md if missing."""
+def resolve(vault: Path, ref: str, name_index: dict) -> Optional[Path]:
+    """Resolve a ref to a vault file. Returns None if it cannot be resolved.
+
+    Tries two strategies:
+    1. Path-style: treat the ref as a vault-relative path (`wiki/note` →
+       `vault/wiki/note.md`). Returns the path if it exists.
+    2. Bare-name fallback: Obsidian's `[[name]]` looks up `name.md` anywhere
+       in the vault. If path-style fails and the ref has no path separator,
+       look it up in name_index (stem → list of paths).
+
+    name_index resolves ambiguity by returning the first match. Production
+    Obsidian flags ambiguous wikilinks itself; this checker just confirms
+    at least one resolution exists.
+    """
     rel = ref.strip().lstrip("/")
+    if not rel:
+        return None
+
+    # Strategy 1: path-style
     candidate = vault / rel
     if candidate.suffix != ".md":
         candidate = candidate.with_suffix(".md")
+    if candidate.exists():
+        return candidate
+
+    # Strategy 2: bare-name fallback (Obsidian-style)
+    if "/" not in rel:
+        stem = rel[:-3] if rel.endswith(".md") else rel
+        matches = name_index.get(stem.lower())
+        if matches:
+            return matches[0]
+
+    # Neither strategy found it — return the path-style candidate so the
+    # caller can report it as "expected: <this path>"
     return candidate
+
+
+def build_name_index(vault: Path) -> dict:
+    """Build a stem-lowercased → [paths] index of every .md in the vault.
+
+    Used by `resolve()` to handle Obsidian's bare-wikilink lookup, where
+    `[[meowtype]]` resolves to `meowtype.md` anywhere in the vault.
+    """
+    idx = {}
+    for p in vault.rglob("*.md"):
+        if not p.is_file():
+            continue
+        idx.setdefault(p.stem.lower(), []).append(p)
+    return idx
 
 
 def scan_file(path: Path):
@@ -95,6 +138,8 @@ def run(vault: Path, scan_roots, ignore_orphans: bool):
     if not vault.exists():
         return {"error": f"vault not found: {vault}", "dead": [], "live": [], "orphans": []}
 
+    name_index = build_name_index(vault)
+
     dead = []
     live = []
     referenced_files = set()
@@ -110,10 +155,10 @@ def run(vault: Path, scan_roots, ignore_orphans: bool):
         for ln, ref in scan_file(src):
             if is_template(ref) or is_directory_ref(vault, ref):
                 continue
-            target = resolve(vault, ref)
+            target = resolve(vault, ref, name_index)
             entry = {"source": str(src), "line": ln, "ref": ref,
-                     "resolved": str(target)}
-            if target.exists():
+                     "resolved": str(target) if target else ""}
+            if target and target.exists():
                 live.append(entry)
                 referenced_files.add(target.resolve())
             else:
