@@ -105,5 +105,5 @@ jobs:
 
       - name: Check file encoding
         run: |
-          file rebuild-vault-index.py | grep -q "UTF-8\|ASCII" || (echo "Bad encoding in script" && exit 1)
-          file examples/vault-index.json | grep -q "UTF-8\|ASCII" || (echo "Bad encoding in examples" && exit 1)
+          python3 -c "open('rebuild-vault-index.py', encoding='utf-8').read()" || (echo "Bad encoding in script" && exit 1)
+          python3 -c "open('examples/vault-index.json', encoding='utf-8').read()" || (echo "Bad encoding in examples" && exit 1)
