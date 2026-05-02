@@ -142,7 +142,6 @@ What's running:
 - Two agents (Hermes + Claude Code) sharing one vault, separate write directories
 
 Intentionally not done (yet):
-- No reader reference implementation — third-party agents implement their own alias matcher today
 - No semantic / fuzzy-vector search
 - No automated alias generation
 - No GUI / dashboard
@@ -150,6 +149,7 @@ Intentionally not done (yet):
 ## Reference
 
 - [`rebuild-vault-index.py`](rebuild-vault-index.py) — single-file indexer, stdlib only
+- [`orp_reader.py`](orp_reader.py) — single-file reader (library + CLI), stdlib only
 - [`INSTALL.md`](INSTALL.md) — installation, cron / launchd setup, agent integration
 - [`OBSIDIAN-RAG-PROTOCOL.md`](OBSIDIAN-RAG-PROTOCOL.md) — full protocol spec (v1.1)
 - [`examples/`](examples/) — sample vault and resulting index
