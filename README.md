@@ -122,6 +122,32 @@ Renamed to `<name>.broken-<ts>` and a fresh one is rebuilt. Hand-curated aliases
 **Can two agents share one vault?**
 Yes — that's what `wiki/` and `hermes-knowledge/` are for in the example. Each agent writes to its own directory, both read everything. Atomic-append rules for the shared `log.md` are specified in §5.2 of the protocol.
 
+## Day-to-day maintenance
+
+The whole loop, end to end:
+
+1. **You write a note in Obsidian.** Frontmatter (`title`, `aliases`, `summary_points`) is optional — no frontmatter still works, you just get filename-based fallback aliases.
+2. **The index rebuilds automatically.** Pick a trigger from `INSTALL.md` — system cron, your agent's scheduler, coupled into another job, or just "agent prompts you when stale." Most setups use a daily scheduled rebuild plus the staleness prompt as a safety net.
+3. **The agent reads the index on recall-intent questions.** "What did we decide about X?" → agent reads `vault-index.json`, fuzzy-matches "X" against your aliases, reads the matched note, answers with context.
+4. **The agent prompts you when the index is stale.** ≥4 days old by default — you say "rebuild," it runs the script, you continue. No silent staleness.
+5. **You health-check periodically.** `python3 orp_health.py` flags schema drift, orphan paths, oversized indexes. Run it in CI or after a vault reorg.
+
+That's it. No retraining, no embedding refresh, no vector DB to maintain.
+
+## ORP isn't read-only
+
+The protocol surface is the index, but real ORP setups use the vault bidirectionally — agents both read existing notes and write new ones back, on triggers. A few patterns that work in production:
+
+| Trigger | What gets written | Where |
+|---|---|---|
+| Daily job-board scrape | Top N matched listings for the day | `hermes-knowledge/job-search/daily-push-log.md` |
+| Weekly market snapshot job | One-page recap with key signals | `hermes-knowledge/market/weekly-snapshot-{YYYY-Www}.md` |
+| Cron-detected anomaly (price, on-chain, macro) | Notable-event entry | `hermes-knowledge/cron-knowledge/{category}/` |
+| Agent finishes a substantive task | Decision log + open questions | `wiki/career/`, `wiki/projects/`, etc. |
+| Inter-agent coordination | Append entry to shared log | `wiki/log.md` (under §5.2 atomic-append rules) |
+
+These aren't part of the protocol contract — they're *applications* of it. Document the triggers your agent should fire, point each at a vault subdirectory, and your second brain accumulates without you copy-pasting. The index picks up the new entries on its next rebuild.
+
 ## Compared to alternatives
 
 | Approach | Tradeoff vs ORP |
@@ -135,24 +161,29 @@ ORP wins when you'd rather curate 5 aliases per important note than tune embeddi
 
 ## Status
 
-Spec is at v1.1. Reference indexer is one Python file (~250 lines, stdlib only).
+Spec is at v1.2. The repo ships four single-file Python utilities, all stdlib-only — together about 1,000 lines.
 
 What's running:
-- Daily cron rebuild on a 30-entry vault, three months
-- Two agents (Hermes + Claude Code) sharing one vault, separate write directories
+- A 40-ish-entry vault on a single laptop, three months and counting
+- Two agents (Hermes + Claude Code) sharing one vault with separate write directories
+- Daily scheduled rebuild plus staleness-prompt fallback
 
-Intentionally not done (yet):
+Honest framing: this is a hand-rolled spec from one user's setup. There are no third-party adopters yet — the spec is offered as something you might find useful, not as a community standard. If you adopt it, file issues; the spec moves with real usage.
+
+Intentionally not done:
 - No semantic / fuzzy-vector search
 - No automated alias generation
 - No GUI / dashboard
 
 ## Reference
 
-- [`rebuild-vault-index.py`](rebuild-vault-index.py) — single-file indexer, stdlib only
-- [`orp_reader.py`](orp_reader.py) — single-file reader (library + CLI), stdlib only
-- [`INSTALL.md`](INSTALL.md) — installation, cron / launchd setup, agent integration
-- [`OBSIDIAN-RAG-PROTOCOL.md`](OBSIDIAN-RAG-PROTOCOL.md) — full protocol spec (v1.1)
-- [`examples/`](examples/) — sample vault and resulting index
+- [`rebuild-vault-index.py`](rebuild-vault-index.py) — single-file indexer
+- [`orp_reader.py`](orp_reader.py) — single-file reader (library + CLI)
+- [`orp_health.py`](orp_health.py) — schema and freshness validator
+- [`orp_link_check.py`](orp_link_check.py) — wikilink integrity scanner
+- [`INSTALL.md`](INSTALL.md) — installation, four trigger paths, agent integration
+- [`OBSIDIAN-RAG-PROTOCOL.md`](OBSIDIAN-RAG-PROTOCOL.md) — full protocol spec (v1.2)
+- [`examples/`](examples/) — three real notes you can run the full loop against in 30 seconds
 
 ## License
 

@@ -105,24 +105,28 @@ Pass it with:
 
 ---
 
-## Setting Up Automatic Rebuilds
+## Triggering Rebuilds
 
-The index needs periodic rebuilding to pick up new and changed notes.
+The index gets stale unless something rebuilds it. The protocol doesn't mandate a single mechanism — pick one or two from below. Most working setups use a scheduled trigger as the primary path and the agent's staleness-prompt as a safety net.
 
-### Cron (macOS/Linux)
+### Path 1: System scheduler (cron / launchd / systemd timer)
+
+The default. Set-and-forget; runs whether you're using the agent or not.
+
+**Cron (macOS / Linux)**
 
 ```bash
-# Edit crontab
-crontab -e
-
-# Add this line to rebuild daily at 9 AM:
+# Add to your crontab (crontab -e):
 0 9 * * * python3 /path/to/obsidian-rag-protocol/rebuild-vault-index.py \
   --vault ~/Documents/MyObsidianVault \
   --output ~/.hermes/vault-index.json \
-  --scan wiki/projects:cc wiki/career:cc hermes-knowledge/:hermes
+  --scan wiki/projects:cc wiki/career:cc hermes-knowledge/:hermes \
+  >> ~/.hermes/orp-rebuild.log 2>&1
 ```
 
-### Launchd (macOS)
+The output redirect matters — `cron` swallows stderr by default and a corrupted-index warning would otherwise vanish.
+
+**launchd (macOS)**
 
 Create `~/Library/LaunchAgents/com.orp.rebuild.plist`:
 
@@ -154,6 +158,10 @@ Create `~/Library/LaunchAgents/com.orp.rebuild.plist`:
         <key>Minute</key>
         <integer>0</integer>
     </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/you/.hermes/orp-rebuild.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/you/.hermes/orp-rebuild.log</string>
 </dict>
 </plist>
 ```
@@ -162,6 +170,56 @@ Load it:
 ```bash
 launchctl load ~/Library/LaunchAgents/com.orp.rebuild.plist
 ```
+
+### Path 2: Agent-internal scheduler
+
+If your agent has a native scheduled-task system (Hermes Agent does, with cron-style task IDs), register the rebuild there instead of the OS-level scheduler. Survives across machine reboots in lockstep with the agent itself, and shows up in the same dashboard you check for other scheduled work.
+
+```bash
+# Hermes example — register a daily task that runs the rebuild script:
+hermes schedule add \
+  --cron "0 9 * * *" \
+  --command "python3 ~/.hermes/scripts/rebuild-vault-index.py"
+```
+
+(Translate to your agent's equivalent — the operative point is "use the scheduler that's already running other tasks for this agent.")
+
+### Path 3: Coupled to an upstream job
+
+If you have other scheduled jobs that write content into the vault — a daily job-board scraper, a weekly market-snapshot generator — append the rebuild to their tail rather than running it independently. Keeps the index fresh-relative-to-the-write that just happened, and avoids stale windows where new vault content exists but the index doesn't see it yet.
+
+```bash
+#!/usr/bin/env bash
+# Example: job-search-with-rebuild.sh
+set -euo pipefail
+
+# 1. Run the upstream job that writes new content to the vault
+python3 ~/.hermes/scripts/scan_jobs.py --output ~/Documents/Vault/hermes-knowledge/job-search/
+
+# 2. Rebuild the index immediately so the new content is visible to agents
+python3 ~/.hermes/scripts/rebuild-vault-index.py
+```
+
+### Path 4: Staleness-prompt fallback
+
+The protocol's Rule 4 (§4.3) — agent reads the index, sees it's ≥4 days old, asks the user. This is the safety net for when one of the scheduled triggers fails silently (machine asleep, cron daemon stopped, agent's task system paused). It's also the natural-language path: when the user says "refresh the index" or "rebuild the RAG," the agent runs the script directly.
+
+No setup required beyond making sure the agent's system prompt includes the staleness check (see [Agent Integration](#agent-integration) below).
+
+### Verifying the trigger
+
+After your trigger path runs at least once:
+
+```bash
+# Health check the result
+python3 orp_health.py --index ~/.hermes/vault-index.json
+
+# Confirm an incremental rebuild reports 0 changed (no double-extraction)
+python3 rebuild-vault-index.py ... --scan ...
+# ✅ vault-index.json rebuilt: N entries (0 changed)
+```
+
+A non-zero `changed` count when nothing in the vault moved means something is mutating files behind your back (iCloud, git, backup software). Investigate before assuming the indexer is broken.
 
 ---
 
@@ -176,20 +234,25 @@ Add these rules to your system prompt (SOUL.md or equivalent):
 ```
 ## Obsidian RAG Protocol
 
-When the user asks a non-trivial question (contains "why", "how", "analyze",
-"research", "review", "before", "what is"), your first tool call MUST be:
+For any user question whose answer depends on personal context — what
+we decided, what we discussed, what we know about X — your first tool
+call MUST be:
 
   read_file(~/.hermes/vault-index.json)
 
 Then:
-1. Extract keywords from the user's question
-2. Match against `aliases` arrays in the index (fuzzy substring, case-insensitive)
-3. If HIT → read_file the matched vault file(s)
-4. If MISS → check `updated` field. If ≥4 days old, offer to rebuild the index
-5. If the index file is corrupted (JSON parse error) → ask user to rebuild
+1. Extract keywords from the user's question.
+2. Match against `aliases` arrays in the index (substring, case-insensitive).
+3. HIT → read_file the matched vault file(s) and use as context.
+4. MISS → check `updated`. If ≥4 days old, offer to rebuild the index.
+5. JSON parse error → ask the user to rebuild.
 
-Skip the index for trivial commands ("run script", "check price", "send message").
+Skip the index for direct-action commands (run X, query a price, send a
+message) and self-contained transformations (format this, edit that)
+that don't depend on personal context.
 ```
+
+The classifier is a behavioral test, not a keyword list — see protocol §4.1. Recall intent reads the index; execute intent doesn't.
 
 ### Claude Code
 
@@ -198,17 +261,20 @@ Add to your `CLAUDE.md`:
 ```
 ## Vault Context
 
-Before answering any non-trivial question, read ~/.hermes/vault-index.json and
-match the user's keywords against the aliases field. If a match is found, read
+Before answering any question that depends on personal context, read
+~/.hermes/vault-index.json and match the user's keywords against the
+aliases field (substring, case-insensitive). If a match is found, read
 the referenced .md file and use it as context.
+
+Skip the index for direct-action commands and self-contained tasks.
 ```
 
 ### Any Other Agent
 
 The protocol is agent-agnostic. All you need:
-1. **A way to read files** — `read_file`, `cat`, or equivalent
-2. **A system prompt rule** — "first tool call = read vault-index.json on non-trivial queries"
-3. **A cron job** — rebuild the index daily
+1. **A way to read files** — `read_file`, `cat`, MCP filesystem server, or equivalent.
+2. **A system prompt rule** — "for recall-intent queries, read `vault-index.json` first" (see §4.1 for what counts as recall intent).
+3. **A rebuild trigger** — pick one or more from [Triggering Rebuilds](#triggering-rebuilds) above.
 
 #### Reader reference
 
@@ -231,17 +297,22 @@ python3 orp_reader.py get coinbase-japan-analysis # full entry as JSON
 
 Stdlib only. Drop it next to your agent's tooling and wire the match output into whatever read-file call your agent uses.
 
+**Single source of truth tip.** Rather than copying matching rules into your agent's system prompt (where they'll drift over time as the protocol evolves), have the prompt instruct the agent to *call* `orp_reader.py match` and parse the output. Keeps the rules in one place — the reader file — instead of duplicated across every agent's prompt.
+
 ---
 
 ## Verifying It Works
 
-### 1. Check the index is updating
+### 1. Health check
 
-After your cron runs, the `updated` field in `vault-index.json` should show today's date:
+The fastest single check — pass means schema is valid, index isn't stale, no orphan paths:
 
 ```bash
-python3 -c "import json; print(json.load(open('/Users/vincentwen/.hermes/vault-index.json'))['updated'])"
+python3 orp_health.py --index ~/.hermes/vault-index.json
+# OK: N entries, K.K KB, 0 failures, 0 warnings
 ```
+
+If `--strict`, warnings (orphans, oversized index, short aliases) become non-zero exit. Use that mode in CI gates.
 
 ### 2. Check incremental rebuilds are healthy
 
