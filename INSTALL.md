@@ -334,7 +334,7 @@ For **Claude Code**, add to `~/.claude/settings.json`:
         "hooks": [{
           "type": "command",
           "command": "python3 ~/.hermes/scripts/orp_reader.py digest --agent cc",
-          "timeout": 5000
+          "timeout": 5
         }]
       }
     ]
