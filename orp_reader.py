@@ -157,6 +157,27 @@ def _extract_headers(text: str) -> list:
     return [line for line in text.split("\n") if HEADER_RE.match(line)]
 
 
+def _extract_headers_with_offsets(tail_bytes: bytes, base_offset: int) -> list:
+    """Return [(header_str, absolute_byte_offset_of_line_start), ...].
+
+    Used by `cmd_digest` to compute where to advance the cursor when the
+    output is capped: the cursor must land at the byte offset of the first
+    *unshown* entry, not at EOF, so truncated entries appear in the next
+    digest call instead of being permanently skipped.
+
+    Iterates over raw bytes so the offsets stay byte-exact across multi-byte
+    UTF-8 characters (CJK headers are common).
+    """
+    results = []
+    pos = 0
+    for line_bytes in tail_bytes.split(b"\n"):
+        line_str = line_bytes.decode("utf-8", errors="replace")
+        if HEADER_RE.match(line_str):
+            results.append((line_str, base_offset + pos))
+        pos += len(line_bytes) + 1  # +1 accounts for the \n that split() removed
+    return results
+
+
 class VaultIndex:
     def __init__(self, doc: dict, source_path: Optional[Path] = None):
         self.doc = doc
@@ -399,9 +420,12 @@ def cmd_digest(args) -> int:
 
         with open(log_path, "rb") as f:
             f.seek(read_offset)
-            tail = f.read().decode("utf-8", errors="replace")
+            tail_bytes = f.read()
 
-        all_headers = _extract_headers(tail)
+        # Headers with their absolute byte offsets — needed so the cursor can
+        # advance to the start of the first UNSHOWN entry when output is capped
+        # (otherwise truncated entries would be permanently skipped on next call).
+        all_headers = _extract_headers_with_offsets(tail_bytes, read_offset)
 
         if args.full:
             shown = all_headers
@@ -415,8 +439,8 @@ def cmd_digest(args) -> int:
             ts = datetime.now().astimezone().isoformat(timespec="seconds")
             mode = "bootstrap" if bootstrap else f"since byte {read_offset}"
             print(f"[ORP digest · agent={args.agent} · {mode} · {ts}]")
-            for h in shown:
-                print(h)
+            for header_str, _ in shown:
+                print(header_str)
             if more_count > 0:
                 print(
                     f"... {more_count} more entries; "
@@ -426,8 +450,22 @@ def cmd_digest(args) -> int:
 
         sys.stdout.flush()
 
+        # Cursor advance rules:
+        # - bootstrap:       jump to log_size (intentional — we choose not to dump full history)
+        # - --full:          jump to log_size (everything consumed)
+        # - regular, no cap hit (shown == all):    jump to log_size
+        # - regular, cap hit (truncation in regular mode):
+        #     land at the byte offset of the first UNSHOWN entry so the
+        #     next digest call picks up where this one left off. This is the
+        #     v1.4.1 fix — pre-fix the cursor always jumped to log_size,
+        #     permanently dropping any entry past the cap.
         if not args.peek:
-            _write_cursor(cursor_path, log_size)
+            if not bootstrap and not args.full and more_count > 0 and shown:
+                first_unshown_offset = all_headers[len(shown)][1]
+                next_cursor = first_unshown_offset
+            else:
+                next_cursor = log_size
+            _write_cursor(cursor_path, next_cursor)
 
     return 0
 
