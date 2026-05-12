@@ -1,5 +1,10 @@
 # OBSIDIAN-RAG-PROTOCOL.md
 
+## Version 1.4.1
+
+Changes from 1.4:
+- §5.5 cursor advance fixed — when a regular-mode digest call hits the cap (10 entries shown, more pending), the cursor now lands at the byte offset of the first unshown entry, not at EOF. Pre-fix, every entry past the cap was permanently dropped from that agent's digest stream. Surfaced via dogfood telemetry (Hermes hit cap with 40 truncated entries across 7 days = ~6 entries/day silently lost). Bootstrap and `--full` modes are unchanged (still advance to EOF).
+
 ## Version 1.4
 
 Changes from 1.3:
@@ -369,7 +374,7 @@ The collaboration channel (§5.2) is append-only and ordered, so an agent can kn
 
 **Cursor.** Each agent has a cursor file at `<vault>/.orp/cursor-<agent_id>.json` with shape `{"log_md_offset": <bytes>, "last_run": "<iso8601>"}`. The cursor advances strictly forward and is per-agent — different agents see digests of the same shared log from their own positions. Cursor files live under a dot-directory so they are excluded from index scans (§2.2).
 
-**Output.** Header lines (lines matching `^(?:## )?🦅\[`) from the cursor offset to EOF, capped at 10 entries on regular calls and 5 on bootstrap. Bullets and other body content are not emitted — header lines are sized to be self-sufficient (§5.2). Truncation prints `... N more entries; run with --full to see all`.
+**Output.** Header lines (lines matching `^(?:## )?🦅\[`) from the cursor offset to EOF, capped at 10 entries on regular calls and 5 on bootstrap. Bullets and other body content are not emitted — header lines are sized to be self-sufficient (§5.2). Truncation prints `... N more entries; run with --full to see all`. When truncation happens in regular mode, the **cursor advances only to the byte offset of the first unshown entry**, not to EOF — so the truncated entries appear in the next digest call instead of being permanently dropped (v1.4.1 fix). Bootstrap and `--full` modes still advance cursor to EOF.
 
 **Bootstrap.** When no cursor file exists for an agent (first run, or after corruption rotation), the digest prints the LAST `BOOTSTRAP_TAIL` (5) header lines from the full log, then sets the cursor to current EOF. This avoids dumping the full history into a new agent's first context.
 
