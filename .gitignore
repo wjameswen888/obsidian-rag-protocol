@@ -17,3 +17,6 @@ build/
 examples/vault-index.json
 *.broken-*
 
+# Claude Code memory cache — auto-generated, not source
+AGENTS.md
+
