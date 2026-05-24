@@ -2,19 +2,26 @@
 
 🌐 [English](README.md) | [中文](README.zh.md) | [日本語](README.ja.md)
 
-**ORP 是一个文件系统原生（filesystem-native）的协调协议——给两个或更多 AI agent 共享同一个 Obsidian vault 时用的。** 每个 agent 通过两条机制看到其他 agent 干了啥：确定性的 note 检索 + 从 append-only `wiki/log.md` 读取的 byte-cursor digest——**不用 embeddings、不用向量库、检索路径上不用 LLM**。
+**如果你有两个或更多 AI agent 在同一份笔记上干活，它们不知道彼此干了啥。ORP 就是让它们同步的共享笔记本。**
 
-> **诚实版本：** 如果你只有一个 AI agent、想让它帮你 curate / 重写 / "优化" vault，**这不是你要的工具**。请用 [Karpathy 的 LLM Wiki 模式](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) 或 [obsidian-second-brain](https://github.com/eugeniughelbur/obsidian-second-brain)。ORP 真正发挥价值的场景：多个 agent 在同一个 vault 干活，它们之间的"静默漂移"是真实成本。
+**你能拿到什么：**
+- **每个 session 不用再重新解释一遍背景。** Agent 启动时就能看到其他 agent 上次以来写了什么。
+- **找过去某篇笔记不用靠"我大概记得叫什么"。** 一个小关键词索引把多数"我之前在哪写过 X"问题搞定——不用调 embedding。可选的语义层兜底剩下的。
+- **笔记是你的。** Agent 只在共享 log 追加事件，从来不重写你已有的笔记。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Hermes Compatible](https://img.shields.io/badge/Hermes_Agent-Compatible-blue)](https://github.com/nousresearch/hermes-agent)
 [![Obsidian](https://img.shields.io/badge/Obsidian-Powered-7C3AED)](https://obsidian.md)
 
-### 核心差异
+### 这适合你吗
 
-- **Coordination，不是 curation。** ORP 不重写你的笔记、不"优化" vault。内容是你的，ORP 只负责协调 agent 之间的状态
-- **跨 agent 感知。** session 启动时自动注入 byte-cursor digest，告诉 Agent B 上次以来 Agent A 写了啥。无轮询、无 daemon
-- **检索零 LLM 开销。** 确定性 alias 子串匹配，不用 embeddings 也不用 LLM re-ranking。30 篇笔记的索引约 15 KB
+| 你的情况 | 适配？ |
+|---|---|
+| **两个或多个 AI agent 在同一个 Obsidian 式 vault 写东西** | ✅ ORP 就是为这个场景做的 |
+| 一个 AI agent + 想让它 curate / 重写 / "优化" vault | ❌ 用 [Karpathy 的 LLM Wiki 模式](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) 或 [obsidian-second-brain](https://github.com/eugeniughelbur/obsidian-second-brain) |
+| 只有笔记，没 AI agent | ❌ 用 Obsidian 本体就够 |
+
+ORP 是*协调协议*，不是 wiki 维护工具也不是第二大脑。如果你的 agent 之间没有"静默漂移"成本，这不是你要的工具。
 
 ---
 
@@ -28,7 +35,7 @@
 
 ## 用上 ORP 之后
 
-今早你新开一个 Claude Code session。在你打字之前，这段会自动注入到 agent 的 context：
+**早晨 — session 启动。** 你打开 Claude Code。打字之前，这段自动注入到 agent 的 context：
 
 ```
 [ORP digest · agent=cc · since byte 184459 · 2026-05-12T09:13:15+09:00]
@@ -37,9 +44,14 @@
 🦅[hermes] 2026-05-12T08:46 · write · Oppenheimer 文学精读 v1.3.0 — 7/7 endings
 ```
 
-你一句话还没说，Claude Code 已经知道 Hermes 昨晚干了啥。不用重复解释，session 从共享 context 开始。
+Claude Code 已经知道 Hermes 昨晚干了啥。不用你重新解释。Session 从共享 context 开始。
 
-当你在对话里问"我们之前对 X 是怎么判断的"时，ORP 的 pull side 接管：agent 把你的关键词模糊匹配到你自己维护的 alias，只读对应的笔记。约 15 KB 的 JSON 索引。没 embeddings。东西不离开你电脑。
+**中午 — 拉一个过去的决定。** 之后你问："我们上个月对东京那次出差是怎么定的？" Agent 查那个小关键词索引，一个 tool call 命中对应笔记，带着真实决定回答你。这次 query 不扫 vault，也不碰 embedding。
+
+**整个闭环跑在一个很小的 JSON 索引上**——800 篇笔记的 vault 索引也能控在 20 KB 以内，因为只存 frontmatter + cutoff 过滤。全本地。除非你主动开 v1.6 的可选语义兜底，不然东西不离开你电脑。
+
+📊 **看架构图**：[`assets/orp-architecture.png`](assets/orp-architecture.png) — 一张图三层（vault · ORP 协调 · agents）。
+🎬 **看跑起来的样子**：[`assets/orp-demo.mp4`](assets/orp-demo.mp4) — 30 秒屏录。
 
 ## ORP 跟 Karpathy 的 LLM Wiki / obsidian-second-brain 是什么关系
 
@@ -49,7 +61,7 @@
 
 - **Karpathy 的 LLM Wiki** 是一个*模式*：让 LLM 在 ingest 阶段读 source、构建并**维护**一组互相 link 的 markdown 页面。知识"编译一次然后保持新鲜"。**单 agent + 人协作**的设计。
 - **obsidian-second-brain** 是这个模式的*实现 + 扩展*：31 条命令、4 个定时 background agent、新 source 进来 vault **自动重写老页面**、矛盾自动 reconcile。**单 Claude Code session + 人**。
-- **ORP** 是一个*协议*——让两个 AI agent 在同一个 vault 下共享上下文：确定性的 alias 子串匹配做检索（不用 embeddings），byte-cursor session-start digest 做跨 agent 感知，append-only log 做协调通道。**Vault 内容是你的，ORP 不重写它**。
+- **ORP** 是一个*协议*——让两个 AI agent 在同一个 vault 下共享上下文：以 alias 关键词索引为主路径做检索（主路径不碰 embedding；v1.6 有可选的语义兜底处理 miss 的情况），byte-cursor session-start digest 做跨 agent 感知，append-only log 做协调通道。**Vault 内容是你的，ORP 不重写它**。
 
 ### 在协议栈里各自的位置
 
@@ -78,10 +90,10 @@ ORP 在 application 层下面。原则上 obsidian-second-brain 可以跑在 ORP
 | **所在层** | Application（知识） | Application（知识） | Coordination（状态） |
 | **agent 数量** | 1 + 人 | 1 + 人（CC） | 2（CC + Hermes），可扩展 |
 | **会改动 vault 页面吗** | 会（ingest 时 LLM 改写） | 会（激进重写 + 矛盾 reconcile）| **不会**（append-only log，vault 内容不动）|
-| **检索方式** | LLM 查询时跑 | LLM 查询 + 缓存页面 | **确定性 alias 子串匹配，不用 LLM、不用 embeddings** |
-| **Embeddings / 向量库** | 没明说 | 可选（Perplexity sonar 做调研） | **完全不用——by design** |
+| **检索方式** | LLM 查询时跑 | LLM 查询 + 缓存页面 | **以 alias 关键词索引为主路径**（主路径不碰 LLM），v1.6 加可选的 embedding 兜底 |
+| **Embeddings / 向量库** | 没明说 | 可选（Perplexity sonar 做调研） | **可选兜底**——alias-only 部署完整支持 |
 | **awareness 原语** | 读整个 wiki / 页面图 | 自动加载 `## For future Claude` 前置段 | 每个 agent 各自的 byte-offset cursor 读 `log.md` |
-| **实现规模** | 1500 字的 gist（idea 文档）| 31 条命令、4 个 cron agent、hook 系统 | 6 个 stdlib Python 文件（约 1900 行）|
+| **实现规模** | 1500 字的 gist（idea 文档）| 31 条命令、4 个 cron agent、hook 系统 | 8 个单文件 Python 工具（约 3.6k 行 · stdlib + 可选 `openai`/`tiktoken` 给 v1.6 vec 层）|
 | **多 agent 原生支持** | 否 | 否 | **是** |
 
 ### 啥时候用啥
@@ -141,22 +153,25 @@ bash hermes/install.sh
 
 ## 它**不**是什么
 
-- **不是 embedding 检索**。没向量、没 semantic search。问题没匹配到 alias，ORP 不会装作能找到。
+- **不是自动 curator**。ORP 不重写你的笔记、不生成摘要、不"优化"vault。只做协调。
+- **Alias 优先，不是 embedding 优先**。多数查询走确定性关键词索引——主路径不碰 LLM。v1.6 加了*可选*的语义兜底处理没命中 alias 的情况；alias-only setup 完整支持，不需要 OpenAI key。
 - **不是自动打标签**。Alias 来自 frontmatter 或你手动维护的 map。indexer 永远不自己生成——这样检索结果稳定可预测。
 - **不是跨设备同步**。vault 在你电脑上。文件层让 iCloud / Syncthing / Dropbox 自己处理，ORP 只在上面跑索引。
-- **不是托管服务**。一个 Python 脚本（只用 stdlib）+ 一个 JSON 文件。没账号、没 API key。
+- **不是托管服务**。所有脚本本地跑。不需要注册账号。可选的 v1.6 vec 层会用你自己的 OpenAI key 调 `text-embedding-3-small`。
 
 ## 你适合用吗
 
 | 你的情况 | 适配 |
 |---|---|
+| **两个或多个 AI agent 在同一个 vault 写东西** | 适合——这是规范用例 |
+| 一个 AI agent + 想让它 curate / 重写 vault | 不适合——用 [Karpathy 模式](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) 或 [obsidian-second-brain](https://github.com/eugeniughelbur/obsidian-second-brain) |
 | 用 Obsidian 记笔记 | 适合 |
 | 别的 markdown 笔记目录 | 适合——ORP 只扫 `.md`，"Obsidian" 部分指的是 frontmatter 习惯 |
 | Vault 没怎么写 frontmatter | 适合，会用文件名做 fallback alias。给重要笔记加 `aliases:` 检索更准 |
 | 1000+ 篇笔记 | 适合——`--cutoff-days` 控制工作集，已索引的旧笔记不会被掉出 |
 | 用 Hermes | 直接适配，`install.sh` 一键搞定 |
 | 用 Claude Code、Cursor、ChatGPT、自己写的 agent | 适合——ORP 就是个 JSON 文件。看 [其他 Agent](#其他-agent) |
-| 需要真正的语义搜索（"和 X 有关的笔记"） | 不适合——用 LlamaIndex / Mem0 那类 |
+| 想用语义搜索做*主接口* | 用向量库吧。ORP 的 v1.6 vec 层只做兜底——主路径是 alias |
 
 ## 其他 Agent
 
@@ -173,7 +188,7 @@ ORP 本质就是文件系统 + JSON。任何 agent 只要能：
 不会。indexer 只用 Python stdlib，没有任何网络调用。索引文件在你指定的路径下（默认 `~/.hermes/vault-index.json`）。
 
 **我有 800 篇笔记，索引会爆吗？**
-索引控制在 20KB 以内。`--cutoff-days 90`（默认）只索引最近 90 天动过的笔记。已经在索引里的旧笔记不会因为过了窗口就被踢出。
+不会。即使成熟 vault 索引也能控在 20KB 以内——因为 `--cutoff-days 90`（默认）只重新抽取最近 90 天动过的笔记，每条 entry 只存 frontmatter 字段而不是笔记正文。前面"30 篇笔记 ~15KB"的例子是新建小 vault；800 篇笔记的成熟 vault 大小也差不多，因为静默笔记不会被重抽。已经在索引里的旧笔记不会被踢出（不会静默掉条目）。
 
 **我得给所有笔记都加 frontmatter 吗？**
 不用。indexer 会用首段抽取 + 文件名 fallback。给经常被引用的笔记加 `aliases: [...]` 和 `summary_points: [...]` 会让检索更准。
@@ -197,7 +212,7 @@ ORP 本质就是文件系统 + JSON。任何 agent 只要能：
 4. **索引旧了 agent 主动提示。** 默认 ≥4 天 → "要不要重建？" → 你说"重建" → 它跑脚本。不会有静默漂移。
 5. **定期跑健康检查。** `python3 orp_health.py` 检测 schema 漂移、孤儿路径、索引体积。CI 里跑或 vault 重整后跑。
 
-就这些。无需重训、无需 embedding 刷新、无需向量库维护。
+就这些。无需重训、无需向量库维护。（如果开了 v1.6 语义兜底，`vault_vec.py update` 只 re-embed 变动的笔记——跟 alias indexer 同样的每日 cron 模式。）
 
 ## ORP 不只是只读
 
@@ -244,42 +259,69 @@ push 那一面整个协议表面就这么大。实现：
 | 方案 | 跟 ORP 的取舍 |
 |---|---|
 | 把 vault 全塞 system prompt | 简单，但每次对话都吃满 context；没增量更新 |
-| 向量库 / embedding（LlamaIndex / Mem0 / Letta） | 语义匹配能用，但重：要切块、有 embedding 成本、检索黑盒、随时间漂移 |
+| 纯向量库（LlamaIndex / mem0 / Letta / cognee / supermemory） | embedding-first 意味着检索黑盒、切块成本、随重新 embed 漂移。ORP 是 alias-first（确定性，作者 dogfood 多数 query 直接命中 alias 层），vec 只兜底——多数 query 根本不碰 embedding |
+| **CodeGraph 等（tree-sitter 代码图 MCPs）** | 索引源代码 AST + 调用图，给单 coding agent 探索用。ORP 索引散文——笔记、决定、调研——给多 agent 协调用。可以在一台机器上各干各的（CodeGraph 管代码库，ORP 管 vault） |
+| **Vendor memory（Claude memory / ChatGPT memory / Cursor memory）** | 锁定单一厂商；存储不透明；单 agent。ORP 是本地 markdown 文件、跨厂商、多 agent——你换工具笔记也不会消失 |
+| Obsidian Smart Connections 插件 | 单用户、只查询、纯向量——跑在 Obsidian 里。ORP 是多 agent 读写 + 协调；vault 不依赖插件运行 |
 | Obsidian MCP server | 实时读 vault，但没有手维护的 alias 层——agent 每次得 grep 整个 vault |
-| **ORP** | Alias 你说了算，检索确定性强，几乎零延迟。代价：只做 alias 关键词匹配，没语义匹配 |
+| **ORP** | Alias 为主路径的确定性检索（你掌控 alias 广度）+ 可选语义兜底 + 排序融合 + append-only 多 agent log。代价：不做 agent 驱动的 vault 重写——只协调，不 curate |
 
-ORP 适合"宁愿给重要笔记手写 5 个 alias，也不想调 embedding 切块策略"的场景。
+ORP 适合的场景：(a) 有 ≥2 个 agent 往同一个 vault 写东西，(b) 宁愿给重要笔记手写 5 个 alias 也不想调 embedding 切块策略，(c) 想让多数 query 走确定性、把语义当兜底而不是主入口。
+
+## v1.5.1 + v1.6 新功能
+
+用过老版本想看变化的（术语都用人话解释）：
+
+**v1.5.1 — 跨 agent 协议原语**（2026-05）
+- **Log 条目带身份元数据。** 每条 log 现在能挂上 `session=<id> trigger=<触发类型>`——一周后回头读共享 log，你能知道是 *哪个 agent 的哪个 session* 写的、被什么触发，不只是"哪个 agent"。Action 词汇收敛成 6 个固定值（`write` / `note` / `done` / `decision` / `intent` / `issue`），取代之前的自由文本。
+- **Cursor 自检。** 每个 agent 用一个 byte 偏移量记自己上次读到 log 的哪儿，只增量读新东西。v1.5.1 在读之前先校验这个 cursor 没失效——查文件大小、最后 4 KB 的内容哈希、最后修改时间。任何一个不对（log 被截断、从备份还原、等）→ agent 重新全读 + 在 digest 前加一条 ⚠ 警告，**不会静默回退**。
+- **Note status 字段。** 每个 entity 现在有 `status`（`verified` / `captured` / `draft` / `stale` / `archived` / `blocked`），检索默认跳过 stale + archived。补上 v1.5 时"agent 生成的临时 stub 和人写的正式笔记没法区分"的歧义。
+
+**v1.6 — 检索 + hygiene**（2026-05）
+- **可选语义兜底。** 当你的提问跟自己写的 alias 偏太远（你想问"AI 复利"但 alias 是"知识图谱"），OpenAI embedding 层兜底救一下这次查询。新 vault 全量 embed 约 $0.023；每次查询约 $0.000001。**始终是可选**——alias-only setup 完全不受影响。
+- **两路检索的排序融合。** 两层都开时用 [Reciprocal Rank Fusion](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf)（2009 年的学术成果，现在是搜索引擎标准做法）把 alias + vec 的结果合一起。同一篇笔记两路都命中自然往前排，不用人为调相似度阈值。
+- **反向链接（Backlinks）。** `vault_lookup.py backlinks <某篇笔记>` 列出 vault 里所有 wikilink 到它的笔记——同时扫 `wiki/` 和 `hermes-knowledge/` 两个命名空间。不存 index，每次扫 vault 现算（800 篇 ~0.1 秒）。
+- **Embedding 模型版本管理。** 小的 `vault-vec.about.json` sidecar 记录索引是哪个 embedding model 建的。如果维度变了（换了一个完全不同的模型）索引拒绝加载（fail-closed——不同维度的 embedding 空间不能混）。如果只是名字变了（同维度），warn 一下继续跑。
+- **过期 + 重复报告。** 周度 observational 扫描，输出到 `.orp/reports/stale-dedup-<date>.md`。按年龄和小写标题重合度标 candidate。**ORP 永远不自动改 vault**，你看完 report 自己决定哪些合并、哪些保留。
+
+**一个用户 5 天 dogfood 的遥测**（32 次查询 · 2 个 agent · ~800 篇笔记）：**alias 命中 94% · vec 命中 100% · 全 miss 0 · 写冲突 0**。这是单 vault dogfood 数据，**不是通用 benchmark**——但能确认 alias 是主路径、vec 是少数情况下的兜底，**不是反过来**。
 
 ## 状态
 
-协议 v1.5。仓库里 6 个单文件 Python 工具（纯 stdlib，约 1900 行）+ 2 个参考 hook 脚本。
+协议 v1.6。仓库里 **8 个单文件 Python 工具**（约 3.6k 行 · stdlib + v1.6 vec 层用的可选 `openai` + `tiktoken`）+ 2 个参考 hook 脚本。
 
 正在跑的：
-- 一个 40 来篇笔记的 vault，单笔记本上跑了三个月
+- 一个约 800 篇笔记的 vault，单笔记本上跑了 6 个月
 - 两个 agent（Hermes + Claude Code）共享同一 vault，分目录写
 - 每日定时重建 + stale 自检兜底
-- Session 启动 digest 接入两边 agent 的 startup hook（v1.4）
+- Session 启动 digest 接入两边 agent 的 startup hook（v1.4）· 身份元数据 + 3 字段 cursor 自检（v1.5.1）
 - Claude Code 端 PostToolUse + Stop 自动 log hooks（v1.5）——补上 v1.4 dogfood 发现的"CC 写 vault 但不 log"缺口
+- Entity 状态机部署 + 217 条 entity 回填（v1.5.1）—— 216 captured + 1 verified
+- 两层检索（alias + 可选 vec + 排序融合）在 CC 侧部署（v1.6）—— 5 天 dogfood：alias 命中 94% · vec 命中 100% · 全 miss 0（caveat：32 次查询、N=2 agent、不是通用 benchmark）
+- Backlinks 查询 · embedding 模型版本管理 · 过期/重复报告 scaffold（v1.6，observational）
 
 诚实交代：这是从一个用户的真实 setup 长出来的手搓规范。**目前还没有第三方采用方**——这套东西放在这里是"你或许也用得上"，不是"社区标准"。如果你接进来用，欢迎开 issue，spec 会跟着真实使用场景演进。
 
 故意没做：
-- 没语义 / 向量检索
-- 没自动 alias 生成
+- 没自动 alias 生成—— "alias 覆盖薄"留作人工 curate 的信号
 - 没 GUI / dashboard
-- 没 wiki 自动重写（见上方比较段落——append-only log 是相对于"vault 自我重写"的反向设计选择）
+- 没 agent 驱动的 vault 重写（append-only log 是相对于"vault 自我重写"的反向设计选择）
+- 没 N≥3 的 quorum / leader 协议——当前 cursor + log 设计假设 N=2。出现第三个 agent 再说
+- 没自动 dedup 清理——v1.6 报告只标 candidate，是否合并由你定
 
 ## 参考资料
 
 - [`rebuild-vault-index.py`](rebuild-vault-index.py) ——单文件 indexer
-- [`orp_reader.py`](orp_reader.py) ——单文件 reader（库 + CLI：`match` / `get` / `status` + v1.4 `log` / `digest`）
+- [`orp_reader.py`](orp_reader.py) ——单文件 reader（库 + CLI：`match` / `get` / `status` + v1.4 `log` / `digest` + v1.5.1 身份元数据强制 + v1.6 `stale-dedup-report`）
+- [`vault_vec.py`](vault_vec.py) —— **v1.6** 可选语义层（OpenAI embedding；`build` / `update` / `search` / `status`；带 embedding 模型版本管理 sidecar）
+- [`vault_lookup.py`](vault_lookup.py) —— **v1.6** 统一检索 orchestrator（alias + vec + 排序融合 + gap log + `backlinks` 查询 + 周度 `review`）
 - [`orp_health.py`](orp_health.py) ——schema、新鲜度、alias 覆盖度校验
 - [`orp_link_check.py`](orp_link_check.py) ——wikilink 完整性扫描（跳过 fenced code block）
 - [`expand_aliases.py`](expand_aliases.py) ——批量补 frontmatter alias（alias 覆盖度薄时跑 · spec §3.4）
 - [`convert_bare_to_fullpath.py`](convert_bare_to_fullpath.py) ——批量把 bare wikilink 转成全路径（spec §3.5）
 - [`examples/orp-vault-stage.py`](examples/orp-vault-stage.py) + [`orp-vault-flush.py`](examples/orp-vault-flush.py) ——v1.5 PostToolUse + Stop hook 参考实现（spec §5.6）
 - [`INSTALL.md`](INSTALL.md) ——安装、4 种触发方式、各 agent 接入、session-start digest 接线、auto-log hook 接线
-- [`OBSIDIAN-RAG-PROTOCOL.md`](OBSIDIAN-RAG-PROTOCOL.md) ——完整协议 spec（v1.5）
+- [`OBSIDIAN-RAG-PROTOCOL.md`](OBSIDIAN-RAG-PROTOCOL.md) ——完整协议 spec（v1.6）
 - [`examples/`](examples/) ——3 篇真实笔记 + v1.5 hook 脚本
 
 ## License

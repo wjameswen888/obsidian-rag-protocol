@@ -2,19 +2,26 @@
 
 🌐 [English](README.md) | [中文](README.zh.md) | [日本語](README.ja.md)
 
-**ORP is a filesystem-native coordination protocol for two or more AI agents sharing one Obsidian vault.** It lets each agent see what other agents did through deterministic note retrieval plus a byte-cursor digest from an append-only `wiki/log.md` — no embeddings, no vector DB, no LLM in the retrieval path.
+**If you use two or more AI agents on the same notes, they don't know what each other did. ORP is the shared notebook that keeps them in sync.**
 
-> **Brutally honest:** if you have one AI agent and want it to curate, rewrite, or "optimize" your vault, this is probably not the tool you want. Use [Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) or [obsidian-second-brain](https://github.com/eugeniughelbur/obsidian-second-brain) instead. ORP earns its keep when silent drift between agents costs you something real.
+**What you get:**
+- **Stop re-explaining context every session.** Each agent sees, at startup, exactly what the others wrote since it last looked.
+- **Find any past note by name, not by guess.** A small keyword index handles most "where did I write about X?" queries deterministically — no embeddings to tune. An optional semantic layer rescues the rest.
+- **Your notes stay yours.** Agents append to a shared log; they never rewrite your existing notes.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Hermes Compatible](https://img.shields.io/badge/Hermes_Agent-Compatible-blue)](https://github.com/nousresearch/hermes-agent)
 [![Obsidian](https://img.shields.io/badge/Obsidian-Powered-7C3AED)](https://obsidian.md)
 
-### Key differentiators
+### Is this for you?
 
-- **Coordination, not curation.** ORP doesn't rewrite your notes or "optimize" your vault. Your content stays yours; ORP only coordinates what agents do around it.
-- **Cross-agent awareness.** A byte-cursor digest at session start tells Agent B exactly what Agent A wrote since last time. No polling, no daemons.
-- **Zero LLM at retrieval.** Deterministic alias substring matching, not embeddings or LLM re-ranking. The index is ~15 KB for 30 notes.
+| Your setup | ORP? |
+|---|---|
+| **Two or more AI agents writing to the same Obsidian-style vault** | ✅ This is exactly what ORP solves |
+| One AI agent + you want it to curate / rewrite / "optimize" your vault | ❌ Use [Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) or [obsidian-second-brain](https://github.com/eugeniughelbur/obsidian-second-brain) instead |
+| Just notes, no AI agents | ❌ Plain Obsidian is plenty |
+
+ORP is a *coordination protocol*, not a wiki maintainer or a second-brain. If silent drift between your agents doesn't cost you anything real, this isn't your tool.
 
 ---
 
@@ -28,7 +35,7 @@ The left hand doesn't know what the right hand did. **ORP is the shared blackboa
 
 ## What it feels like with ORP
 
-You start a new Claude Code session this morning. Before you've typed anything, this gets auto-injected into the agent's context:
+**Morning — session start.** You open Claude Code. Before you've typed anything, this auto-injects into the agent's context:
 
 ```
 [ORP digest · agent=cc · since byte 184459 · 2026-05-12T09:13:15+09:00]
@@ -37,9 +44,14 @@ You start a new Claude Code session this morning. Before you've typed anything, 
 🦅[hermes] 2026-05-12T08:46 · write · Oppenheimer 文学精读 v1.3.0 — 7/7 endings
 ```
 
-Claude Code knows what Hermes did overnight before you say a word. You don't re-explain. The session starts with shared context.
+Claude Code already knows what Hermes did overnight. You don't re-explain. The session starts with shared context.
 
-When you ask "what did we decide about X last month?" later in the conversation, ORP's pull side kicks in: the agent fuzzy-matches your keywords against aliases you control and reads only the matched note. ~15 KB JSON index. No embeddings. Nothing leaves your machine.
+**Mid-day — pull a past decision.** Later you ask: *"What did we decide about the Tokyo trip last month?"* The agent searches a small keyword index, finds the matched note in one tool call, and answers with the actual decision. No vault scan, no embeddings touched for this query.
+
+**The whole loop runs on a JSON index that stays tiny** (under ~20 KB even for an 800-note vault, because frontmatter + cutoff filtering keep it compact). Local files only. Nothing leaves your machine unless you opt into the v1.6 semantic fallback for queries that miss the keyword index.
+
+📊 **See the architecture**: [`assets/orp-architecture.png`](assets/orp-architecture.png) — one diagram, three layers (vault · ORP coordination · agents).
+🎬 **Watch the loop run**: [`assets/orp-demo.mp4`](assets/orp-demo.mp4) — 30-second screen capture.
 
 ## How ORP relates to Karpathy's LLM Wiki and obsidian-second-brain
 
@@ -49,7 +61,7 @@ If you're already aware of [Karpathy's LLM Wiki gist](https://gist.github.com/ka
 
 - **Karpathy's LLM Wiki** is a *pattern*: an LLM reads sources at ingest time, builds and **maintains** a wiki of interlinked markdown pages. Knowledge is compiled once, then kept current. Single agent + human curates.
 - **obsidian-second-brain** is an *implementation* of that pattern, expanded: 31 commands, scheduled background agents, the wiki **rewrites itself** when new sources arrive, contradictions reconcile automatically. Single Claude Code session + human.
-- **ORP** is a *protocol* for two AI agents to share context across one vault: deterministic alias matching (no embeddings) for retrieval, byte-cursor session-start digest for cross-agent awareness, an append-only log for coordination. Vault content is yours; ORP doesn't rewrite it.
+- **ORP** is a *protocol* for two AI agents to share context across one vault: alias-first keyword retrieval (no embeddings on the primary path; an optional v1.6 semantic fallback exists for queries that miss), byte-cursor session-start digest for cross-agent awareness, an append-only log for coordination. Vault content is yours; ORP doesn't rewrite it.
 
 ### Where they sit in the stack
 
@@ -78,10 +90,10 @@ ORP sits below the application layer. obsidian-second-brain could, in principle,
 | **Layer** | Application (knowledge) | Application (knowledge) | Coordination (state) |
 | **Agent count** | 1 + human | 1 + human (CC) | 2 (CC + Hermes); extensible |
 | **Mutates vault pages?** | Yes (LLM rewrites at ingest) | Yes, aggressively (rewrites + reconciles) | **No** (append-only log; vault content untouched) |
-| **Retrieval** | LLM at query time | LLM at query time + cached pages | **Deterministic substring alias matching, no LLM, no embeddings** |
-| **Embeddings / vector DB** | Not specified | Optional (Perplexity sonar for research) | **None — by design** |
+| **Retrieval** | LLM at query time | LLM at query time + cached pages | **Alias keyword index as primary** (deterministic, no LLM); v1.6 adds *optional* embedding fallback |
+| **Embeddings / vector DB** | Not specified | Optional (Perplexity sonar for research) | **Optional, fallback-only** — alias-only deployments are fully supported |
 | **Awareness primitive** | Read whole wiki / page graph | Auto-loaded `## For future Claude` preambles | Per-agent byte-offset cursor over `log.md` |
-| **Implementation** | A 1500-word gist (idea file) | 31 commands, 4 cron agents, hook system | 6 stdlib Python files (~1800 lines total) |
+| **Implementation** | A 1500-word gist (idea file) | 31 commands, 4 cron agents, hook system | 8 single-file Python utilities (~3.6k lines · stdlib + optional `openai`/`tiktoken` for v1.6 vec layer) |
 | **Multi-agent native?** | No | No | **Yes** |
 
 ### When to use what
@@ -141,22 +153,25 @@ Full protocol: [OBSIDIAN-RAG-PROTOCOL.md](OBSIDIAN-RAG-PROTOCOL.md). Schema, ali
 
 ## What this is NOT
 
-- **Not embedding-based.** No vectors, no semantic search. If a question doesn't match an alias, ORP doesn't pretend to retrieve it.
+- **Not an automatic curator.** ORP doesn't rewrite your notes, build summaries, or "optimize" your vault. Coordination only.
+- **Alias-first, not embedding-first.** Most queries use a deterministic keyword index — no LLM involved. v1.6 adds an *optional* semantic fallback for queries that miss the alias layer; alias-only setups stay fully supported and don't need an OpenAI key.
 - **Not auto-tagging.** Aliases come from frontmatter or a curated map. The indexer never invents them — keeps retrieval predictable.
 - **Not cross-machine sync.** Your vault, your laptop. iCloud / Syncthing / Dropbox handle the file layer; ORP runs on top.
-- **Not a hosted service.** One Python script (stdlib only) plus a JSON file. No account, no API key.
+- **Not a hosted service.** All scripts run locally on your machine. No account required. The optional v1.6 vec layer uses an OpenAI key you provide for `text-embedding-3-small` calls.
 
 ## Will this work for you?
 
 | You have... | Fit |
 |---|---|
+| **Two or more AI agents writing to the same vault** | Yes — this is the canonical use case |
+| One AI agent + want it to curate / rewrite your vault | No — use [Karpathy's pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) or [obsidian-second-brain](https://github.com/eugeniughelbur/obsidian-second-brain) |
 | An Obsidian vault | Yes |
-| Some other folder of `.md` notes | Yes — ORP just scans `.md` files, the "Obsidian" part is the frontmatter convention |
-| A vault with no frontmatter | Yes, with fallback aliases (filename stems). Add `aliases:` to important notes for better recall |
+| Some other folder of `.md` notes | Yes — ORP scans `.md` files; the "Obsidian" part is just the frontmatter convention |
+| A vault with no frontmatter | Yes, with fallback aliases (filename stems). Add `aliases:` to important notes for sharper recall |
 | 1000+ notes | Yes — `--cutoff-days` keeps the working set bounded; previously-indexed notes don't drop out |
 | Use Hermes | Direct fit, `install.sh` handles it |
 | Use Claude Code, Cursor, ChatGPT, custom agent | Yes — ORP is a JSON file. See [Other agents](#other-agents) |
-| Need true semantic search ("notes related to X") | No — use LlamaIndex, Mem0, or similar |
+| Want semantic search as the *primary* interface | Use a vector DB. ORP's optional v1.6 vec layer is fallback-only — alias-first by design |
 
 ## Other agents
 
@@ -173,7 +188,7 @@ ORP is filesystem + JSON. Any agent that can:
 No. The indexer is Python stdlib only — no network calls. The index file lives at a path you control (default `~/.hermes/vault-index.json`).
 
 **My vault has 800 notes. Will the index blow up?**
-The index targets <20KB. With `--cutoff-days 90` (default), only notes touched in the last 90 days are indexed. Older notes that are already in the index stay (they don't get dropped just because they aged out).
+No. The index targets under 20 KB even on mature vaults because `--cutoff-days 90` (default) only re-indexes notes touched in the last 90 days, and each entry is just frontmatter fields — not full note bodies. The "~15 KB for 30 notes" example earlier is a fresh small vault; a mature 800-note vault stays around the same size because dormant notes don't get re-extracted. Previously-indexed notes that age out are kept (no silent drops).
 
 **Do I need to add frontmatter to all my notes?**
 No. The indexer falls back to first-paragraph extraction and filename-derived aliases. Adding `aliases: [...]` and `summary_points: [...]` to frequently-referenced notes makes retrieval sharper.
@@ -197,7 +212,7 @@ The whole loop, end to end:
 4. **The agent prompts you when the index is stale.** ≥4 days old by default — you say "rebuild," it runs the script, you continue. No silent staleness.
 5. **You health-check periodically.** `python3 orp_health.py` flags schema drift, orphan paths, oversized indexes. Run it in CI or after a vault reorg.
 
-That's it. No retraining, no embedding refresh, no vector DB to maintain.
+That's it. No retraining, no vector DB to maintain. (If you opt into the v1.6 semantic fallback, `vault_vec.py update` re-embeds only changed notes — same daily-cron pattern as the alias indexer.)
 
 ## ORP isn't read-only
 
@@ -244,42 +259,69 @@ Adding a third agent (Codex, Cursor, your own): pick an id, write events through
 | Approach | Tradeoff vs ORP |
 |---|---|
 | Paste vault into system prompt | Simple but blows context budget every conversation; no incremental update |
-| Vector DB / embeddings (LlamaIndex, Mem0, Letta) | Semantic match works, but heavy: chunking, embedding cost, opaque retrieval, drift over time |
+| Pure vector DB (LlamaIndex, mem0, Letta, cognee, supermemory) | Embedding-first means opaque retrieval, chunking tax, drift over re-embeds. ORP runs alias-first (deterministic, in this maintainer's dogfood most queries hit the alias layer cleanly) and uses vec only as the fallback — most queries don't touch an embedding at all |
+| **CodeGraph et al. (tree-sitter code-graph MCPs)** | Index source-code AST + call graph for a single coding agent's exploration. ORP indexes prose — notes, decisions, research — for multi-agent coordination. They can coexist on one machine for different jobs (CodeGraph for the codebase, ORP for the vault) |
+| **Vendor memory (Claude memory, ChatGPT memory, Cursor memory)** | Locked to a single vendor; opaque storage; single-agent. ORP is plain markdown on disk, multi-vendor, multi-agent — your notes don't disappear if you switch tools |
+| Obsidian Smart Connections plugin | Single-user, query-only, vector-only — runs inside Obsidian. ORP is multi-agent write + read + coordinate; vault never depends on the plugin running |
 | Obsidian MCP server | Read-time access, but no curated alias layer — agent has to grep/search the whole vault per query |
-| **ORP** | Aliases are explicit (you control them), retrieval is deterministic, latency near zero. Tradeoff: alias-keyword matching only, no semantic match |
+| **ORP** | Alias-primary deterministic retrieval (you control the alias breadth) + opt-in semantic fallback + RRF fusion + append-only multi-agent log. Tradeoff: no agent-driven vault rewrites — coordination only, not curation |
 
-ORP wins when you'd rather curate 5 aliases per important note than tune embedding chunking.
+ORP wins when (a) you have ≥2 agents writing to the same vault, (b) you'd rather curate ~5 aliases per important note than tune embedding chunking, and (c) you want most queries to be deterministic with semantic as the safety net, not the primary ranker.
+
+## What's new in v1.5.1 + v1.6
+
+If you've used ORP before and want to see what changed (jargon explained inline):
+
+**v1.5.1 — cross-agent protocol primitives** (May 2026)
+- **Identity metadata in log entries.** Each log line can now carry `session=<id> trigger=<category>` — so when you read the shared log a week later, you can tell *which* of an agent's sessions wrote each entry, not just *which agent*. Six fixed action types (`write` / `note` / `done` / `decision` / `intent` / `issue`) replace the previous free-form vocabulary.
+- **Cursor sanity check.** Each agent saves a byte-offset cursor into the shared log so it can incrementally read only what's new. v1.5.1 verifies the cursor isn't stale before reading — checks file size, content hash of the last 4 KB, and last-modified time. If anything is off (log was truncated, restored from backup, etc.), the agent does a full re-read and prepends a warning instead of silently rewinding.
+- **Note status field.** Every entity now has a `status` (`verified` / `captured` / `draft` / `stale` / `archived` / `blocked`) so retrieval can default to "skip stale + archived." Closes the v1.5 ambiguity where agent-generated stub notes were indistinguishable from human-written canonical notes.
+
+**v1.6 — retrieval + hygiene** (May 2026)
+- **Optional semantic fallback.** When your phrasing diverges from your aliases ("AI compounding" instead of "knowledge graphs"), an OpenAI embedding layer rescues the query. ~$0.023 to embed a fresh 800-note vault; ~$0.000001 per query. Stays opt-in — alias-only setups keep working unchanged.
+- **Rank fusion when both layers run.** [Reciprocal Rank Fusion](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf) (a 2009 academic result that's now a search-engine standard) combines alias + vec rankings. Same-doc agreement across both rankers naturally boosts top results without needing a similarity threshold.
+- **Backlinks.** `vault_lookup.py backlinks <target>` lists every note that wikilinks to a given note — across both `wiki/` and `hermes-knowledge/` namespaces. No third index; ORP just walks the vault on each call (~0.1s on 800 notes).
+- **Embedding-model versioning.** A small `vault-vec.about.json` sidecar tracks which embedding model built the index. If the dimension changes (different model entirely), the index won't load (fail-closed — embedding spaces can't mix). If only the model name changes (same dim), you get a warning and the index keeps working.
+- **Stale + duplicate report.** Weekly observational scan into `.orp/reports/stale-dedup-<date>.md`. Flags candidates by age and by lowercased-title overlap. ORP never auto-mutates; you decide what merges and what stays.
+
+**Telemetry from one user's 5-day window** (32 lookups · 2 agents · ~800 notes): **94% alias hit · 100% vec hit · 0 all-miss · 0 write conflicts**. This is single-vault dogfood data, not a general benchmark — but it confirms alias as the primary ranker and vec as the rare-case safety net, not the other way around.
 
 ## Status
 
-Spec is at v1.5. The repo ships six single-file Python utilities (stdlib-only, ~1,900 lines) plus two reference hook scripts.
+Spec is at v1.6. The repo ships **8 single-file Python utilities** (~3.6k lines total: stdlib + optional `openai` + `tiktoken` for the v1.6 vec layer) plus 2 example hook scripts.
 
 What's running:
-- A 40-ish-entry vault on a single laptop, three months and counting
+- An ~800-entry vault on a single laptop, six months and counting
 - Two agents (Hermes + Claude Code) sharing one vault with separate write directories
 - Daily scheduled rebuild plus staleness-prompt fallback
-- Session-start digest wired into both agents' startup hooks (v1.4)
-- Auto-log PostToolUse + Stop hooks on the Claude Code side (v1.5) — fixes the empirical "CC writes vault but doesn't log" gap that surfaced in v1.4 dogfood
+- Session-start digest in both agents' startup hooks (v1.4) · identity meta + 3-field cursor sanity (v1.5.1)
+- Auto-log PostToolUse + Stop hooks on the Claude Code side (v1.5) — fixes the empirical "CC writes vault but doesn't log" gap surfaced in v1.4 dogfood
+- Entity state machine deployed with 217-entity backfill (v1.5.1) — 216 captured + 1 verified
+- Two-layer retrieval (alias + optional vec + rank fusion) on CC side (v1.6) — 5-day single-vault dogfood: 94% alias hit · 100% vec hit · 0 all-miss (caveat: 32 lookups, N=2 agents, not a general benchmark)
+- Backlinks query · embedding-model versioning · stale/dup report scaffold (v1.6, observational)
 
 Honest framing: this is a hand-rolled spec from one user's setup. There are no third-party adopters yet — the spec is offered as something you might find useful, not as a community standard. If you adopt it, file issues; the spec moves with real usage.
 
 Intentionally not done:
-- No semantic / fuzzy-vector search
-- No automated alias generation
+- No automated alias generation — "thin alias coverage" stays a human-curation signal
 - No GUI / dashboard
-- No wiki self-rewriting (see comparison section — append-only log is a deliberate counter-design to "vault rewrites itself")
+- No agent-driven vault rewriting (the append-only log is deliberate counter-design to "vault rewrites itself")
+- No N≥3 quorum / leader protocols — current cursor + log design assumes N=2. Will revisit when a third agent appears
+- No automatic dedup cleanup — v1.6 report flags candidates only; the user decides what merges and what stays
 
 ## Reference
 
 - [`rebuild-vault-index.py`](rebuild-vault-index.py) — single-file indexer
-- [`orp_reader.py`](orp_reader.py) — single-file reader (library + CLI: `match` / `get` / `status` + v1.4 `log` / `digest`)
+- [`orp_reader.py`](orp_reader.py) — single-file reader (library + CLI: `match` / `get` / `status` + v1.4 `log` / `digest` + v1.5.1 identity-meta enforcement + v1.6 `stale-dedup-report`)
+- [`vault_vec.py`](vault_vec.py) — **v1.6** optional semantic layer (OpenAI embeddings; `build` / `update` / `search` / `status`; embedding-model versioning sidecar)
+- [`vault_lookup.py`](vault_lookup.py) — **v1.6** unified retrieval orchestrator (alias + vec + RRF fusion + gap log + `backlinks` query + weekly `review`)
 - [`orp_health.py`](orp_health.py) — schema, freshness, and alias-coverage validator
 - [`orp_link_check.py`](orp_link_check.py) — wikilink integrity scanner (skips fenced code blocks)
 - [`expand_aliases.py`](expand_aliases.py) — bulk frontmatter alias updater (when alias coverage is thin · spec §3.4)
 - [`convert_bare_to_fullpath.py`](convert_bare_to_fullpath.py) — bulk migrate bare wikilinks to full paths (spec §3.5)
 - [`examples/orp-vault-stage.py`](examples/orp-vault-stage.py) + [`orp-vault-flush.py`](examples/orp-vault-flush.py) — v1.5 PostToolUse + Stop hook reference impl (spec §5.6)
 - [`INSTALL.md`](INSTALL.md) — installation, four trigger paths, agent integration, session-start digest wiring, auto-log hook wiring
-- [`OBSIDIAN-RAG-PROTOCOL.md`](OBSIDIAN-RAG-PROTOCOL.md) — full protocol spec (v1.5)
+- [`OBSIDIAN-RAG-PROTOCOL.md`](OBSIDIAN-RAG-PROTOCOL.md) — full protocol spec (v1.6)
 - [`examples/`](examples/) — three real notes you can run the full loop against in 30 seconds, plus the v1.5 hook scripts
 
 ## License
