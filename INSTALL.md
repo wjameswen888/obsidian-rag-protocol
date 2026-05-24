@@ -6,10 +6,17 @@ Get your AI agent reading your Obsidian vault in 3 steps.
 
 ## Prerequisites
 
-- **Python 3.8+** — the reference implementation uses only Python standard library (no pip install needed)
+- **Python 3.8+** — core ORP (alias indexer + reader + cursor + log) uses only the Python standard library; no `pip install` needed
 - **macOS or Linux** — tested on macOS Sequoia, should work on any Unix-like system
 - **Obsidian vault** — a local folder with `.md` files (iCloud-synced vaults work fine)
 - **An AI agent with filesystem access** — Hermes Agent, Claude Code, or any agent that can `read_file`
+
+**Optional (v1.6 semantic-fallback layer only)**: if you want the optional `vault_vec.py` semantic retrieval layer + RRF fusion via `vault_lookup.py`:
+- `pip install openai tiktoken` — `openai` for `text-embedding-3-small` API calls, `tiktoken` for token counting before truncation
+- An `OPENAI_API_KEY` in your environment (or `~/.hermes/.env`)
+- ~$0.023 one-time to embed a ~800-entry vault; ~$0.000001 per query thereafter
+
+Alias-only deployments (no vec layer) do not need either of these.
 
 ---
 

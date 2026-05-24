@@ -1,5 +1,26 @@
 # OBSIDIAN-RAG-PROTOCOL.md
 
+## Version 1.6
+
+Changes from 1.5.1:
+- §3.6 (new) **Semantic Layer (optional)** — `vault_vec.py` adds OpenAI-embedding-based vector retrieval as a second ranker. ~$0.023 one-time to embed a ~800-entry vault; ~$0.000001 per query; index is a local `.npy` + `.meta.json` pair. Alias remains the primary ranker; vec is the safety net for queries where keyword substring fails. Vec is rank-only — it cannot generate content, only retrieve. Optional: alias-only deployments stay protocol-compliant.
+- §3.7 (new) **Rank Fusion (RRF)** — when both layers run, `vault_lookup.py` fuses them via Reciprocal Rank Fusion (k=60, Cormack 2009). Same-doc hits across rankers add naturally → cross-source agreement boosts top results without thresholds. 5-day production telemetry on N=2 agents (32 lookups): alias hit 94%, vec hit 100%, 0 all-miss.
+- §3.8 (new) **Backlinks Query** — `vault_lookup.py backlinks <target>` stateless cross-namespace wikilink reverse-lookup (no third index). Mixed resolver: accepts basename (`foo`) or vault-relative full path (`wiki/.../foo.md`); recognizes `[[X]]` / `[[X|display]]` / `[[X#heading]]` / `[[X^block]]`. Ambiguous basenames warn. Skips `archived` / `stale` referrers by default. ~0.1s on ~800-entry vault.
+- §3.9 (new) **Embedding Model Versioning** — `vault-vec.about.json` sidecar records `model` / `dim` / `vec_count` / `created_at`. Load-time mismatch detection: **hard** (dim differs) exits with code 2 (fail-closed — prevents silently mixing incompatible spaces); **soft** (same dim, different model name) warns and continues. Closes the "embedding drift after CLI/model rename" failure mode.
+- §3.10 (new) **Stale/Duplicate Report** — `orp_reader.py stale-dedup-report` weekly cron scans entities, flags ones older than `--stale-days` and groups by lowercased title / H1 to surface duplicate candidates. Observational only — outputs markdown to `.orp/reports/stale-dedup-<date>.md`; user decides cleanup. Default Tier-2 hygiene without full memory-consolidation pipeline.
+- §1.2 schema — `status` / `source` / `last_verified_at` are spec-level (formalized from 1.5.1 deployment). Retrieval filters default to `status ∈ {verified, draft, captured}`; `archived` and `stale` require explicit opt-in.
+- §11 utilities — adds `vault_vec.py` (semantic layer + embedding versioning) and `vault_lookup.py` (unified orchestrator: alias + vec + RRF + backlinks + gap log). `orp_reader.py` adds `stale-dedup-report` subcommand.
+
+**Backwards compatibility**: Pure alias-only ORP deployments (1.5/1.5.1) remain spec-compliant. Semantic + RRF are opt-in upgrades. Existing vault indexes and log files do not need migration.
+
+## Version 1.5.1
+
+Changes from 1.5:
+- §5.2 — collaboration-log entries gain optional **identity meta trailer** of form `‖ meta: session=<sid8> trigger=<cat>:<detail>`. Without it, multi-agent logs were attributable to the agent (header `[<agent_id>]`) but not to the specific session or trigger that caused the write — making "why did X get logged?" answerable only by manual git-blame. Six-enum action taxonomy (`write` / `note` / `done` / `decision` / `intent` / `issue`) enforced via lint, ending the prior free-form-string drift.
+- §5.5 — per-agent cursor extended with a **3-field sanity check** before incremental read: `file_size` + tail SHA-1 (last 4 KB) + `mtime`. Any mismatch triggers a `full_rescan` from byte 0 and prepends a `⚠ entry` line to the digest so the agent knows the cursor was lost. Pre-fix, log truncation or restore-from-backup would silently rewind cursor reads without warning.
+- §1.2 — schema adds **entity state machine** fields: `status` ∈ {`verified`, `captured`, `draft`, `stale`, `archived`, `blocked`}; `source` (provenance: human-written / agent-derived / external-import / stub); `last_verified_at` (ISO-8601). Default retrieval filter excludes `stale` and `archived`. Closes the 1.5 ambiguity where agent-generated stubs were indistinguishable from human-written canonical notes.
+- §11 — `orp_reader.py` adds `match` (alias substring lookup) + `log` enforcement of 6-enum vocabulary. 217-entity backfill verified during deployment (216 captured + 1 verified).
+
 ## Version 1.5
 
 Changes from 1.4.1:
