@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ORP — Obsidian RAG Protocol</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=JetBrains+Mono:wght@400;600;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0f; font-family: 'Inter', sans-serif; overflow: hidden; }
+  .clip { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; visibility: hidden; }
+
+  .container { width: 100%; max-width: 900px; padding: 0 60px; }
+
+  .hero { font-size: 72px; font-weight: 900; line-height: 1.05; letter-spacing: -0.03em; color: #f0f0f0; }
+  .hero-accent { color: #22d3ee; }
+  .subtitle { font-size: 22px; font-weight: 400; color: #94a3b8; margin-top: 16px; }
+  .stat-num { font-size: 64px; font-weight: 900; color: #22d3ee; letter-spacing: -0.02em; }
+  .stat-label { font-size: 18px; color: #94a3b8; margin-top: 8px; }
+  .code { font-family: 'JetBrains Mono', monospace; font-size: 18px; color: #a78bfa; background: rgba(167,139,250,0.08); padding: 12px 20px; border-radius: 8px; border: 1px solid rgba(167,139,250,0.2); }
+  .badge { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #22d3ee; background: rgba(34,211,238,0.08); padding: 6px 14px; border-radius: 999px; border: 1px solid rgba(34,211,238,0.2); }
+
+  .glow { position: absolute; width: 400px; height: 400px; background: radial-gradient(circle, rgba(34,211,238,0.06) 0%, transparent 70%); border-radius: 50%; pointer-events: none; }
+  .grain {
+    position: absolute; inset: 0; pointer-events: none; z-index: 50; opacity: 0.12;
+    background-image:
+      radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1.2px),
+      radial-gradient(rgba(0,0,0,0.12) 1px, transparent 1.2px);
+    background-size: 3px 3px, 5px 5px;
+    background-position: 0 0, 1px 2px;
+    mix-blend-mode: overlay;
+  }
+
+  .flow { display: flex; align-items: center; gap: 20px; }
+  .flow-box { padding: 20px 28px; border-radius: 10px; text-align: center; }
+  .flow-box.vault { background: rgba(167,139,250,0.1); border: 1.5px solid rgba(167,139,250,0.3); }
+  .flow-box.script { background: rgba(52,211,153,0.1); border: 1.5px solid rgba(52,211,153,0.3); }
+  .flow-box.index { background: rgba(167,139,250,0.1); border: 1.5px solid rgba(167,139,250,0.3); }
+  .flow-label { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: #f0f0f0; }
+  .flow-sub { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #94a3b8; margin-top: 4px; }
+  .flow-arrow { font-size: 24px; color: #22d3ee; }
+
+  .center-text { text-align: center; }
+  .stats-row { display: flex; gap: 80px; justify-content: center; }
+</style>
+</head>
+<body>
+
+<div id="root" data-composition-id="orp" data-start="0" data-width="1080" data-height="1920">
+  <div class="grain"></div>
+
+  <!-- Scene 1: Hook (0-3s) -->
+  <div class="clip" id="scene-hook">
+    <div class="glow" style="top: 20%; left: 50%; transform: translate(-50%,-50%)"></div>
+    <div class="container center-text">
+      <div class="hero">Your agent<br><span class="hero-accent">forgot</span> again.</div>
+      <div class="subtitle">Every new session. Same questions. Same context. Gone.</div>
+    </div>
+  </div>
+
+  <!-- Scene 2: Pain (3-7s) -->
+  <div class="clip" id="scene-pain">
+    <div class="container center-text">
+      <div class="hero" style="font-size: 48px;">"I don't have context<br>for that."</div>
+      <div class="subtitle" style="margin-top: 24px;">Two AI agents. One vault.<br>Zero shared memory.</div>
+    </div>
+  </div>
+
+  <!-- Scene 3: Solution (7-10s) -->
+  <div class="clip" id="scene-solution">
+    <div class="glow" style="top: 30%; left: 30%"></div>
+    <div class="container center-text">
+      <div class="hero">Obsidian<br><span class="hero-accent">RAG Protocol</span></div>
+      <div class="subtitle">Give your agents long-term memory.<br>Zero extra tokens.</div>
+    </div>
+  </div>
+
+  <!-- Scene 4: Build (10-14s) -->
+  <div class="clip" id="scene-build">
+    <div class="container center-text">
+      <div class="badge" style="margin-bottom: 20px;">① BUILD</div>
+      <div class="flow" style="justify-content: center;">
+        <div class="flow-box vault">
+          <div class="flow-label">Obsidian Vault</div>
+          <div class="flow-sub">300+ notes</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box script">
+          <div class="flow-label" style="font-size: 12px;">rebuild-index.py</div>
+          <div class="flow-sub">hash-based</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box index">
+          <div class="flow-label">vault-index.json</div>
+          <div class="flow-sub">~50KB</div>
+        </div>
+      </div>
+      <div class="subtitle" style="margin-top: 20px; font-size: 16px;">Rebuilt daily. Incremental. <span style="color:#22d3ee">No mtime drift.</span></div>
+    </div>
+  </div>
+
+  <!-- Scene 5: Match (14-18s) -->
+  <div class="clip" id="scene-match">
+    <div class="container center-text">
+      <div class="badge" style="margin-bottom: 20px;">② MATCH + INJECT</div>
+      <div class="code" style="display: inline-block; margin-bottom: 20px;">orp_reader.py match "Coinbase Japan"</div>
+      <div style="font-size: 18px; color: #94a3b8; margin-bottom: 8px;">→ 2 entries returned</div>
+      <div class="code" style="display: inline-block;">read_file() → agent context</div>
+      <div class="subtitle" style="margin-top: 24px; font-size: 16px;">Only relevant notes consume tokens.<br><span style="color:#22d3ee">No prompt pollution.</span></div>
+    </div>
+  </div>
+
+  <!-- Scene 6: Data (18-22s) -->
+  <div class="clip" id="scene-data">
+    <div class="container center-text">
+      <div class="stat-num">0<span style="font-size: 32px; color:#94a3b8"> tokens</span></div>
+      <div class="stat-label">per query overhead</div>
+      <div style="margin-top: 40px;" class="stats-row">
+        <div>
+          <div class="stat-num" style="font-size: 48px;">300+</div>
+          <div class="stat-label">notes indexed</div>
+        </div>
+        <div>
+          <div class="stat-num" style="font-size: 48px;">15KB</div>
+          <div class="stat-label">index payload</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scene 7: Digest (22-26s) -->
+  <div class="clip" id="scene-digest">
+    <div class="container center-text">
+      <div class="badge" style="margin-bottom: 20px;">③ DIGEST v1.4</div>
+      <div style="font-size: 36px; font-weight: 700; color: #f0f0f0; margin-bottom: 16px;">
+        <span style="color:#22d3ee">Claude Code</span> wrote 3 files
+      </div>
+      <div style="font-size: 18px; color: #94a3b8;">
+        <span style="color:#fb7185">Hermes</span> knows on session start.<br>
+        No user relay. No repeated context.
+      </div>
+    </div>
+  </div>
+
+  <!-- Scene 8: CTA (26-30s) -->
+  <div class="clip" id="scene-cta">
+    <div class="glow" style="top: 50%; left: 50%; transform: translate(-50%,-50%)"></div>
+    <div class="container center-text">
+      <div class="hero" style="font-size: 48px;">Open Source.<br><span class="hero-accent">MIT License.</span></div>
+      <div class="code" style="display: inline-block; margin-top: 24px; font-size: 16px;">github.com/wjameswen888/obsidian-rag-protocol</div>
+      <div style="margin-top: 32px; display: flex; gap: 16px; justify-content: center;">
+        <div class="badge">ORP v1.4</div>
+        <div class="badge" style="color:#34d399; border-color:rgba(52,211,153,0.2); background:rgba(52,211,153,0.08);">MIT</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+<script>
+const tl = gsap.timeline({ paused: true });
+
+const scenes = [
+  { id: '#scene-hook',   start: 0,  end: 3 },
+  { id: '#scene-pain',   start: 3,  end: 7 },
+  { id: '#scene-solution', start: 7,  end: 10 },
+  { id: '#scene-build',  start: 10, end: 14 },
+  { id: '#scene-match',  start: 14, end: 18 },
+  { id: '#scene-data',   start: 18, end: 22 },
+  { id: '#scene-digest', start: 22, end: 26 },
+  { id: '#scene-cta',    start: 26, end: 30 },
+];
+
+function addScene(id, start, end) {
+  tl.set(id, { visibility: 'visible', opacity: 0 }, start);
+  tl.to(id, { opacity: 1, duration: 0.3, ease: 'power2.out' }, start);
+  tl.to(id, { opacity: 0, duration: 0.3, ease: 'power2.in' }, end - 0.3);
+
+  const hero = document.querySelector(id + ' .hero');
+  if (hero) {
+    tl.from(hero, { scale: 0.95, opacity: 0, duration: 0.5, ease: 'power3.out' }, start + 0.1);
+  }
+
+  const boxes = document.querySelectorAll(id + ' .flow-box');
+  if (boxes.length) {
+    tl.from(boxes, { y: 20, opacity: 0, duration: 0.4, stagger: 0.2, ease: 'power2.out' }, start + 0.3);
+  }
+
+  const stats = document.querySelectorAll(id + ' .stat-num');
+  if (stats.length) {
+    tl.from(stats, { scale: 0.8, opacity: 0, duration: 0.5, stagger: 0.15, ease: 'back.out(1.6)' }, start + 0.3);
+  }
+}
+
+addScene('#scene-hook',    0,  3);
+addScene('#scene-pain',    3,  7);
+addScene('#scene-solution', 7,  10);
+addScene('#scene-build',   10, 14);
+addScene('#scene-match',   14, 18);
+addScene('#scene-data',    18, 22);
+addScene('#scene-digest',  22, 26);
+addScene('#scene-cta',     26, 30);
+
+// Extend timeline to 30s
+tl.set({}, {}, 30);
+
+window.__timelines = { orp: tl };
+</script>
+
+</body>
+</html>

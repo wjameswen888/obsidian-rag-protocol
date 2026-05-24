@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Obsidian RAG Protocol — Architecture</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: #020617;
+      min-height: 100vh;
+      padding: 2rem;
+      color: white;
+    }
+    .container { max-width: 1100px; margin: 0 auto; }
+    .header { margin-bottom: 2rem; }
+    .header-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
+    .pulse-dot { width: 12px; height: 12px; background: #22d3ee; border-radius: 50%; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.025em; }
+    .subtitle { color: #94a3b8; font-size: 0.875rem; margin-left: 1.75rem; }
+    .diagram-container {
+      background: rgba(15, 23, 42, 0.5);
+      border-radius: 1rem;
+      border: 1px solid #1e293b;
+      padding: 1.5rem;
+      overflow-x: auto;
+    }
+    svg { width: 100%; min-width: 960px; display: block; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; margin-top: 2rem; }
+    .card { background: rgba(15, 23, 42, 0.5); border-radius: 0.75rem; border: 1px solid #1e293b; padding: 1.25rem; }
+    .card-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .card-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .card-dot.cyan { background: #22d3ee; }
+    .card-dot.emerald { background: #34d399; }
+    .card-dot.violet { background: #a78bfa; }
+    .card h3 { font-size: 0.875rem; font-weight: 600; }
+    .card ul { list-style: none; color: #94a3b8; font-size: 0.75rem; }
+    .card li { margin-bottom: 0.375rem; }
+    .footer { text-align: center; margin-top: 1.5rem; color: #475569; font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-row">
+        <div class="pulse-dot"></div>
+        <h1>Obsidian RAG Protocol — Data Flow</h1>
+      </div>
+      <p class="subtitle">How two AI agents share long-term memory through a single vault index</p>
+    </div>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1050 620">
+        <defs>
+          <marker id="arrow-cyan" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#22d3ee" />
+          </marker>
+          <marker id="arrow-amber" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#fbbf24" />
+          </marker>
+          <marker id="arrow-violet" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#a78bfa" />
+          </marker>
+          <marker id="arrow-emerald" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#34d399" />
+          </marker>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+          </pattern>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="3" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+
+        <rect width="100%" height="100%" fill="url(#grid)" />
+
+        <!-- ===== PHASE 1: BUILD (top) ===== -->
+        <text x="30" y="36" fill="#fbbf24" font-size="11" font-weight="600">① BUILD — Daily Index Rebuild</text>
+
+        <!-- Vault (Database-style, violet) -->
+        <rect x="30" y="52" width="180" height="80" rx="8" fill="rgba(76, 29, 149, 0.3)" stroke="#a78bfa" stroke-width="1.5"/>
+        <rect x="30" y="52" width="180" height="20" rx="8" fill="rgba(76, 29, 149, 0.5)"/>
+        <text x="120" y="66" fill="white" font-size="10" font-weight="600" text-anchor="middle">Obsidian Vault</text>
+        <text x="44" y="90" fill="#94a3b8" font-size="9">wiki/ career/ research/</text>
+        <text x="44" y="105" fill="#94a3b8" font-size="9">hermes-knowledge/</text>
+        <text x="44" y="120" fill="#94a3b8" font-size="8">300+ markdown files</text>
+
+        <!-- Indexer (Backend, emerald) -->
+        <rect x="290" y="52" width="180" height="50" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="380" y="72" fill="white" font-size="11" font-weight="600" text-anchor="middle">rebuild-vault-index.py</text>
+        <text x="380" y="88" fill="#94a3b8" font-size="9" text-anchor="middle">hash-based incremental</text>
+
+        <!-- vault-index.json (Database, violet) -->
+        <rect x="550" y="42" width="220" height="70" rx="8" fill="rgba(76, 29, 149, 0.3)" stroke="#a78bfa" stroke-width="1.5"/>
+        <rect x="550" y="42" width="220" height="20" rx="8" fill="rgba(76, 29, 149, 0.5)"/>
+        <text x="660" y="56" fill="white" font-size="10" font-weight="600" text-anchor="middle">vault-index.json</text>
+        <text x="564" y="78" fill="#94a3b8" font-size="8">~50KB · entries by stem ID</text>
+        <text x="564" y="93" fill="#94a3b8" font-size="8">aliases · summaries · content hash</text>
+        <text x="564" y="106" fill="#fbbf24" font-size="7">updated daily 09:00 JST</text>
+
+        <!-- Arrows: Vault → Indexer → vault-index -->
+        <line x1="210" y1="82" x2="288" y2="77" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrow-emerald)"/>
+        <text x="248" y="70" fill="#94a3b8" font-size="8" text-anchor="middle">scan dirs</text>
+        <line x1="470" y1="77" x2="548" y2="77" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow-violet)"/>
+
+        <!-- ===== PHASE 2: DIGEST (middle) ===== -->
+        <text x="30" y="175" fill="#22d3ee" font-size="11" font-weight="600">② DIGEST — Session-Start Sync</text>
+
+        <!-- log.md (External, slate) -->
+        <rect x="30" y="192" width="180" height="45" rx="6" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="120" y="210" fill="white" font-size="10" font-weight="600" text-anchor="middle">wiki/log.md</text>
+        <text x="120" y="225" fill="#94a3b8" font-size="9" text-anchor="middle">append-only collaboration log</text>
+
+        <!-- orp_reader.py digest -->
+        <rect x="290" y="192" width="180" height="45" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="380" y="210" fill="white" font-size="10" font-weight="600" text-anchor="middle">orp_reader.py digest</text>
+        <text x="380" y="226" fill="#94a3b8" font-size="9" text-anchor="middle">byte-offset cursor v1.4</text>
+
+        <!-- Agent (External) -->
+        <rect x="550" y="192" width="100" height="45" rx="6" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="600" y="212" fill="white" font-size="10" font-weight="600" text-anchor="middle">Agent</text>
+        <text x="600" y="227" fill="#94a3b8" font-size="8" text-anchor="middle">new session</text>
+
+        <!-- Arrow: log → digest → agent -->
+        <line x1="210" y1="215" x2="288" y2="215" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrow-cyan)"/>
+        <text x="248" y="208" fill="#94a3b8" font-size="8" text-anchor="middle">read new bytes</text>
+        <line x1="470" y1="215" x2="548" y2="215" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrow-cyan)"/>
+
+        <!-- Cross-agent awareness note -->
+        <text x="670" y="212" fill="#22d3ee" font-size="8">"CC wrote 3 files</text>
+        <text x="670" y="224" fill="#22d3ee" font-size="8">since your last session"</text>
+
+        <!-- ===== PHASE 3: QUERY (bottom) ===== -->
+        <text x="30" y="290" fill="#34d399" font-size="11" font-weight="600">③ QUERY — Lazy Context Injection</text>
+
+        <!-- User query -->
+        <rect x="30" y="308" width="160" height="55" rx="6" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="110" y="328" fill="white" font-size="10" font-weight="600" text-anchor="middle">User Query</text>
+        <text x="110" y="348" fill="#22d3ee" font-size="8" text-anchor="middle">"what's our strategy</text>
+        <text x="110" y="360" fill="#22d3ee" font-size="8" text-anchor="middle">for Coinbase Japan?"</text>
+
+        <!-- vault-index match -->
+        <rect x="260" y="308" width="190" height="55" rx="6" fill="rgba(76, 29, 149, 0.3)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="355" y="328" fill="white" font-size="10" font-weight="600" text-anchor="middle">orp_reader.py match</text>
+        <text x="355" y="348" fill="#94a3b8" font-size="8" text-anchor="middle">"Coinbase Japan" →</text>
+        <text x="355" y="360" fill="#fbbf24" font-size="8" text-anchor="middle">2 entries returned</text>
+
+        <!-- Vault note -->
+        <rect x="520" y="308" width="180" height="55" rx="6" fill="rgba(76, 29, 149, 0.3)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="610" y="328" fill="white" font-size="10" font-weight="600" text-anchor="middle">read_file()</text>
+        <text x="610" y="348" fill="#94a3b8" font-size="8" text-anchor="middle">vault note loaded</text>
+        <text x="610" y="360" fill="#94a3b8" font-size="8" text-anchor="middle">into agent context</text>
+
+        <!-- Agent response -->
+        <rect x="770" y="308" width="200" height="55" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="870" y="328" fill="white" font-size="10" font-weight="600" text-anchor="middle">Agent Responds</text>
+        <text x="870" y="348" fill="#22d3ee" font-size="8" text-anchor="middle">with vault context</text>
+        <text x="870" y="360" fill="#94a3b8" font-size="8" text-anchor="middle">no hallucination</text>
+
+        <!-- Arrows -->
+        <line x1="190" y1="335" x2="258" y2="335" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow-violet)"/>
+        <text x="224" y="328" fill="#94a3b8" font-size="7" text-anchor="middle">intent detect</text>
+        <line x1="450" y1="335" x2="518" y2="335" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow-violet)"/>
+        <line x1="700" y1="335" x2="768" y2="335" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrow-cyan)"/>
+
+        <!-- ===== CROSS-CUT: Collaboration (right column - vertical) ===== -->
+
+        <!-- CC Agent box -->
+        <rect x="830" y="52" width="180" height="55" rx="6" fill="rgba(8, 51, 68, 0.3)" stroke="#22d3ee" stroke-width="1" stroke-dasharray="4,4"/>
+        <text x="920" y="74" fill="#22d3ee" font-size="10" font-weight="600" text-anchor="middle">Claude Code (CC)</text>
+        <text x="920" y="90" fill="#94a3b8" font-size="8" text-anchor="middle">vibe coding · research</text>
+        <text x="920" y="102" fill="#94a3b8" font-size="7" text-anchor="middle">reads vault-index on query</text>
+
+        <!-- Hermes box -->
+        <rect x="830" y="130" width="180" height="55" rx="6" fill="rgba(136, 19, 55, 0.3)" stroke="#fb7185" stroke-width="1" stroke-dasharray="4,4"/>
+        <text x="920" y="152" fill="#fb7185" font-size="10" font-weight="600" text-anchor="middle">Hermes Agent</text>
+        <text x="920" y="168" fill="#94a3b8" font-size="8" text-anchor="middle">market · job · cron</text>
+        <text x="920" y="180" fill="#94a3b8" font-size="7" text-anchor="middle">reads vault-index on query</text>
+
+        <!-- Bidirectional arrows CC↔Hermes via log.md -->
+        <path d="M 830 110 L 750 110 Q 740 110 740 120 L 740 175" fill="none" stroke="#22d3ee" stroke-width="1" stroke-dasharray="3,3"/>
+        <text x="758" y="104" fill="#22d3ee" font-size="7">writes to wiki/</text>
+        <path d="M 1010 110 L 1040 110 L 1040 175 L 1012 175" fill="none" stroke="#fb7185" stroke-width="1" stroke-dasharray="3,3"/>
+        <text x="1042" y="145" fill="#fb7185" font-size="7">writes to hermes-knowledge/</text>
+
+        <!-- ===== KEY METRICS BADGES (top-right) ===== -->
+        <rect x="830" y="220" width="180" height="28" rx="4" fill="rgba(34, 211, 238, 0.1)" stroke="#22d3ee" stroke-width="0.5"/>
+        <text x="845" y="238" fill="#22d3ee" font-size="8" filter="url(#glow)">0 tokens per query</text>
+        <text x="845" y="252" fill="#94a3b8" font-size="7" text-anchor="middle">index cost: ~15KB/query</text>
+
+        <!-- ===== LEGEND ===== -->
+        <text x="30" y="420" fill="white" font-size="10" font-weight="600">Legend</text>
+        <rect x="30" y="432" width="16" height="10" rx="2" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="52" y="441" fill="#94a3b8" font-size="8">Agent / Protocol</text>
+        <rect x="180" y="432" width="16" height="10" rx="2" fill="rgba(76, 29, 149, 0.3)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="202" y="441" fill="#94a3b8" font-size="8">Vault / Index</text>
+        <rect x="320" y="432" width="16" height="10" rx="2" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1"/>
+        <text x="342" y="441" fill="#94a3b8" font-size="8">Build / Script</text>
+        <rect x="460" y="432" width="16" height="10" rx="2" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1"/>
+        <text x="482" y="441" fill="#94a3b8" font-size="8">External</text>
+        <rect x="580" y="432" width="16" height="10" rx="2" fill="transparent" stroke="#22d3ee" stroke-width="1" stroke-dasharray="3,3"/>
+        <text x="602" y="441" fill="#94a3b8" font-size="8">Agent Instance</text>
+
+        <!-- ===== PHASE LABELS (bottom) ===== -->
+        <text x="30" y="480" fill="#fbbf24" font-size="10" font-weight="600">Key Insight</text>
+        <text x="30" y="498" fill="#94a3b8" font-size="9">The index is read as a tool call — never pre-loaded into the system prompt.</text>
+        <text x="30" y="515" fill="#94a3b8" font-size="9">Agent decides which notes to fetch based on alias matches. Only relevant bodies consume tokens.</text>
+        <text x="30" y="532" fill="#94a3b8" font-size="9">Result: unlimited vault memory with near-zero per-query overhead.</text>
+
+        <!-- === Protocol version badge === -->
+        <rect x="830" y="480" width="180" height="22" rx="4" fill="rgba(34, 211, 238, 0.08)" stroke="#22d3ee" stroke-width="0.5"/>
+        <text x="920" y="495" fill="#22d3ee" font-size="8" text-anchor="middle">ORP v1.4 · MIT License</text>
+      </svg>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot emerald"></div>
+          <h3>Zero-Token Context Injection</h3>
+        </div>
+        <ul>
+          <li>• Index is read as a tool call (~15KB), not prompt-prefixed</li>
+          <li>• Agent fetches only matched notes via read_file</li>
+          <li>• No context window pollution from irrelevant notes</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot cyan"></div>
+          <h3>Session-Start Awareness</h3>
+        </div>
+        <ul>
+          <li>• Byte-offset digest into wiki/log.md (v1.4)</li>
+          <li>• Each agent knows what the other wrote since last session</li>
+          <li>• Best-effort — never blocks agent startup</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot violet"></div>
+          <h3>Bidirectional Collaboration</h3>
+        </div>
+        <ul>
+          <li>• CC writes wiki/ · Hermes writes hermes-knowledge/</li>
+          <li>• log.md serves as append-only communication channel</li>
+          <li>• Hash-based incremental rebuilds — no mtime drift</li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="footer">
+      github.com/wjameswen888/obsidian-rag-protocol · ORP v1.4 · MIT
+    </p>
+  </div>
+</body>
+</html>
