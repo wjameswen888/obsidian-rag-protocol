@@ -128,11 +128,47 @@ def load_env():
     sys.exit(3)
 
 
+_FRONTMATTER_RAG_EXCLUDE_RE = re.compile(r'^rag_exclude:\s*(\S+)', re.MULTILINE)
+
+
+def is_rag_excluded(path_or_text):
+    """Spec frontmatter opt-out: `rag_exclude: true` → skip regardless of path.
+
+    Mirrors rebuild-vault-index.py (alias layer) so both retrieval layers honor
+    the same exclusion flag. Reads only the frontmatter head (4KB), same as
+    extract_status. Parse failure → False (fail-open: a broken head should not
+    silently drop a live note from the index).
+    """
+    try:
+        if isinstance(path_or_text, Path):
+            with open(path_or_text, 'r', encoding='utf-8', errors='replace') as f:
+                head = f.read(4096)
+        else:
+            head = path_or_text[:4096]
+    except Exception:
+        return False
+    if not head.startswith('---'):
+        return False
+    end = head.find('\n---', 3)
+    if end < 0:
+        return False
+    m = _FRONTMATTER_RAG_EXCLUDE_RE.search(head[3:end])
+    if not m:
+        return False
+    val = m.group(1).strip().strip('"').strip("'").rstrip(',').lower()
+    return val in ('true', 'yes')
+
+
 def find_markdown_files():
     """Yield (source, abs_path, display_path) for all indexable .md files.
 
     source: 'vault' for Obsidian, 'memory' for ~/.claude/projects/*/memory/.
     display_path: source-relative path for nicer reporting.
+
+    This is the §2.2/§2.3 eligibility filter shared by build_index, status
+    drift, and vault_lookup doctor — `rag_exclude: true` files are dropped
+    here so all three stay consistent (an excluded file is neither indexed
+    nor counted as eligible-but-missing drift).
     """
     # Obsidian vault
     for root, dirs, files in os.walk(VAULT):
@@ -140,6 +176,8 @@ def find_markdown_files():
         for f in files:
             if f.endswith('.md') and not f.startswith('.'):
                 abs_p = Path(root) / f
+                if is_rag_excluded(abs_p):
+                    continue
                 yield 'vault', abs_p, str(abs_p.relative_to(VAULT))
     # Per-project memory dirs
     if MEMORY_ROOT.exists():
@@ -149,6 +187,8 @@ def find_markdown_files():
                 continue
             for f in sorted(mem_dir.iterdir()):
                 if f.is_file() and f.suffix == '.md' and not f.name.startswith('.'):
+                    if is_rag_excluded(f):
+                        continue
                     yield 'memory', f, f'{proj.name}/memory/{f.name}'
 
 
@@ -497,6 +537,12 @@ def search(query, top_k, threshold, fmt, include_status):
         abs_str = m.get('abs_path') or str(VAULT / m['rel_path'])
         abs_p = Path(abs_str)
         if not abs_p.exists():
+            continue
+        # rag_exclude re-check at retrieval time: an opt-out added after the
+        # last build must hide the note immediately — index-time filtering
+        # alone leaves stale rows of newly excluded files searchable until
+        # the next update. Bounded by `window`, so ≤ top_k*5 head reads.
+        if is_rag_excluded(abs_p):
             continue
         # v1.5.1 C3: status filter
         entry_status = (m.get('status') or DEFAULT_FALLBACK_STATUS).lower()
